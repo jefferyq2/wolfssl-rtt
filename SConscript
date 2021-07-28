@@ -12,6 +12,6 @@ CPPPATH = [cwd, cwd+'wolfssl']
 LOCAL_CCFLAGS = ''
 CPPDEFINES = ['WOLFSSL_USER_SETTINGS']
 
-group = DefineGroup('wolfssl', src, depend = ['PKG_USING_FAL'], CPPPATH = CPPPATH, LOCAL_CCFLAGS = LOCAL_CCFLAGS, CPPDEFINES = CPPDEFINES)
+group = DefineGroup('wolfssl', src, depend = [''], CPPPATH = CPPPATH, LOCAL_CCFLAGS = LOCAL_CCFLAGS, CPPDEFINES = CPPDEFINES)
 
 Return('group')

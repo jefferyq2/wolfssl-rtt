@@ -7,6 +7,7 @@
 
 #define RTTHREAD
 
+
 /* You can select one or all of the following tests */
 #define WOLFSSL_WOLFCRYPT_TEST
 #define WOLFSSL_BENCHMARK_TEST
@@ -18,6 +19,16 @@
 #define HAVE_AES_KEYWRAP
 #define HAVE_X963_KDF
 #define WOLFSSL_AES_DIRECT
+#define WC_NO_HARDEN
+#define WOLFSSL_IGNORE_FILE_WARN
+
+#define DEBUG_WOLFSSL
+// #define NO_WOLFSSL_SERVER
+#define NO_OLD_TLS
+// #define NO_DSA
+// #define NO_ERROR_STRINGS
+#define NO_MULTIBYTE_PRINT
+
 /* adjust CURRENT_UNIX_TS to seconds since Jan 01 1970. (UTC)
 You can get the current time from https://www.unixtimestamp.com/
 */
@@ -42,7 +53,6 @@ You can get the current time from https://www.unixtimestamp.com/
 
 #define NO_WRITE_TEMP_FILES
 
-#define XSNPRINTF snprintf
 #define NO_WRITEV
 
 #define HAVE_AESGCM
