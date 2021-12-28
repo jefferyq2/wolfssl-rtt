@@ -22,7 +22,7 @@
 #define WC_NO_HARDEN
 #define WOLFSSL_IGNORE_FILE_WARN
 
-#define DEBUG_WOLFSSL
+//#define DEBUG_WOLFSSL
 // #define NO_WOLFSSL_SERVER
 #define NO_OLD_TLS
 // #define NO_DSA
