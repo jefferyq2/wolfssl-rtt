@@ -1110,6 +1110,9 @@ WOLFSSL_API int wolfCrypt_Cleanup(void);
         #define XS_ISREG(s) (s & M2MB_S_IFREG)
         #define SEPARATOR_CHAR ':'
     #else
+        #if defined(RTTHREAD) && (RTTHREAD_VERSION<40004)
+            #include <dfs_posix.h>
+        #endif
         #include <dirent.h>
         #include <unistd.h>
         #include <sys/stat.h>
