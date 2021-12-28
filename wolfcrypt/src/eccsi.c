@@ -878,6 +878,8 @@ static int eccsi_make_pair(EccsiKey* key, WC_RNG* rng,
         }
 
         if (err == 0) {
+            wc_ecc_free(&key->pubkey);
+
             /* Step 1 and 2: Generate ephemeral key - v, PVT = [v]G */
             err = wc_ecc_make_key_ex(rng, key->ecc.dp->size, &key->pubkey,
                     key->ecc.dp->id);
@@ -1488,14 +1490,17 @@ int wc_ValidateEccsiPair(EccsiKey* key, enum wc_HashType hashType,
         err = BAD_STATE_E;
     }
 
-    if (err == 0) {
-        params = &key->params;
+    if (err != 0)
+        return err;
 
-        hs = &key->tmp;
-        res = &key->pubkey.pubkey;
+    SAVE_VECTOR_REGISTERS(return _svr_ret;);
 
-        err = eccsi_load_base(key);
-    }
+    params = &key->params;
+    hs = &key->tmp;
+    res = &key->pubkey.pubkey;
+
+    err = eccsi_load_base(key);
+
     if (err == 0) {
        err = eccsi_load_ecc_params(key);
     }
@@ -1543,6 +1548,8 @@ int wc_ValidateEccsiPair(EccsiKey* key, enum wc_HashType hashType,
             *valid = (wc_ecc_cmp_point(res, kpak) == MP_EQ);
         }
     }
+
+    RESTORE_VECTOR_REGISTERS();
 
     return err;
 }
@@ -1860,6 +1867,8 @@ static int eccsi_gen_sig(EccsiKey* key, WC_RNG* rng, enum wc_HashType hashType,
         }
 
         if (err == 0) {
+            wc_ecc_free(&key->pubkey);
+
             /* Step 1 and 2: Generate ephemeral key - j, J = [j]G, r = Jx */
             err = wc_ecc_make_key_ex(rng, sz, &key->pubkey, key->ecc.dp->id);
         }
@@ -2036,6 +2045,12 @@ static int eccsi_decode_sig_r_pvt(const EccsiKey* key, const byte* sig,
         err = mp_read_unsigned_bin(r, sig, sz);
     }
     if (err == 0) {
+        /* must free previous public point otherwise wc_ecc_import_point_der 
+         * could leak memory */
+        mp_clear(pvt->x);
+        mp_clear(pvt->y);
+        mp_clear(pvt->z);
+
         err = wc_ecc_import_point_der(sig + sz * 2, sz * 2 + 1,
                 wc_ecc_get_curve_idx(key->ecc.dp->id), pvt);
     }
@@ -2162,12 +2177,15 @@ int wc_VerifyEccsiHash(EccsiKey* key, enum wc_HashType hashType,
         err = BAD_STATE_E;
     }
 
+    if (err != 0)
+        return err;
+
+    SAVE_VECTOR_REGISTERS(return _svr_ret;);
+
     /* Decode the signature into components. */
-    if (err == 0) {
-        r = &key->pubkey.k;
-        pvt = &key->pubkey.pubkey;
-        err = eccsi_decode_sig_r_pvt(key, sig, sigSz, r, pvt);
-    }
+    r = &key->pubkey.k;
+    pvt = &key->pubkey.pubkey;
+    err = eccsi_decode_sig_r_pvt(key, sig, sigSz, r, pvt);
 
     /* Load the curve parameters for operations */
     if (err == 0) {
@@ -2225,6 +2243,8 @@ int wc_VerifyEccsiHash(EccsiKey* key, enum wc_HashType hashType,
     if (verified != NULL) {
         *verified = ((err == 0) && (mp_cmp(jx, r) == MP_EQ));
     }
+
+    RESTORE_VECTOR_REGISTERS();
 
     return err;
 }

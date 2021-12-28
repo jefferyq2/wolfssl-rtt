@@ -37,14 +37,15 @@
 
 /* in case user set USE_FAST_MATH there */
 #include <wolfssl/wolfcrypt/settings.h>
+
+#ifdef USE_FAST_MATH
+
 #ifdef NO_INLINE
     #include <wolfssl/wolfcrypt/misc.h>
 #else
     #define WOLFSSL_MISC_INCLUDED
     #include <wolfcrypt/src/misc.c>
 #endif
-
-#ifdef USE_FAST_MATH
 
 #include <wolfssl/wolfcrypt/random.h>
 #include <wolfssl/wolfcrypt/tfm.h>
@@ -94,26 +95,6 @@ word32 CheckRunTimeFastMath(void)
 
 
 /* Functions */
-
-static fp_digit fp_cmp_mag_ct(fp_int *a, fp_int *b, int len)
-{
-  int i;
-  fp_digit r = FP_EQ;
-  fp_digit mask = (fp_digit)-1;
-
-  for (i = len - 1; i >= 0; i--) {
-    /* 0 is placed into unused digits. */
-    fp_digit ad = a->dp[i];
-    fp_digit bd = b->dp[i];
-
-    r |= mask & (ad > bd);
-    mask &= (ad > bd) - 1;
-    r |= mask & (-(ad < bd));
-    mask &= (ad < bd) - 1;
-  }
-
-  return r;
-}
 
 int fp_add(fp_int *a, fp_int *b, fp_int *c)
 {
@@ -998,6 +979,7 @@ int fp_mod(fp_int *a, fp_int *b, fp_int *c)
 void fp_mod_2d(fp_int *a, int b, fp_int *c)
 {
    int x;
+   int bmax;
 
    /* zero if count less than or equal to zero */
    if (b <= 0) {
@@ -1009,18 +991,35 @@ void fp_mod_2d(fp_int *a, int b, fp_int *c)
    fp_copy(a, c);
 
    /* if 2**d is larger than we just return */
-   if (b >= (DIGIT_BIT * a->used)) {
+   if (c->sign == FP_ZPOS && b >= (DIGIT_BIT * a->used)) {
       return;
    }
 
+  bmax = (b + DIGIT_BIT - 1) / DIGIT_BIT;
   /* zero digits above the last digit of the modulus */
-  for (x = (b / DIGIT_BIT) + ((b % DIGIT_BIT) == 0 ? 0 : 1); x < c->used; x++) {
+  for (x = bmax; x < c->used; x++) {
     c->dp[x] = 0;
   }
+
+  if (c->sign == FP_NEG) {
+     fp_digit carry = 0;
+     /* negate value */
+     for (x = 0; x < c->used; x++) {
+         fp_digit next = c->dp[x] > 0;
+         c->dp[x] = (fp_digit)0 - c->dp[x] - carry;
+         carry |= next;
+     }
+     for (; x < bmax; x++) {
+         c->dp[x] = (fp_digit)0 - carry;
+     }
+     c->used = bmax;
+     c->sign = FP_ZPOS;
+  }
+
   /* clear the digit that is not completely outside/inside the modulus */
   x = DIGIT_BIT - (b % DIGIT_BIT);
   if (x != DIGIT_BIT) {
-     c->dp[b / DIGIT_BIT] &= ~((fp_digit)0) >> x;
+     c->dp[bmax - 1] &= ~((fp_digit)0) >> x;
   }
 
   fp_clamp (c);
@@ -1431,7 +1430,7 @@ int fp_invmod_mont_ct(fp_int *a, fp_int *b, fp_int *c, fp_digit mp)
   fp_int* pre;
 #endif
 
-  if ((a->used * 2 > FP_MAX_BITS) || (b->used * 2 > FP_MAX_BITS)) {
+  if ((a->used * 2 > FP_SIZE) || (b->used * 2 > FP_SIZE)) {
     return FP_VAL;
   }
 
@@ -1600,49 +1599,95 @@ int fp_addmod(fp_int *a, fp_int *b, fp_int *c, fp_int *d)
   return err;
 }
 
-/* d = a - b (mod c) - constant time (a < c and b < c and positive) */
+/* d = a - b (mod c) - constant time (a < c and b < c and all positive)
+ * c and d must not be the same pointers.
+ */
 int fp_submod_ct(fp_int *a, fp_int *b, fp_int *c, fp_int *d)
 {
-  fp_word  w = 0;
+  fp_sword w;
   fp_digit mask;
   int i;
 
-  mask = 0 - (fp_cmp_mag_ct(a, b, c->used + 1) == (fp_digit)FP_LT);
-  for (i = 0; i < c->used + 1; i++) {
-      fp_digit mask_a = 0 - (i < a->used);
-
-      w         += c->dp[i] & mask;
-      w         += a->dp[i] & mask_a;
-      d->dp[i]   = (fp_digit)w;
-      w        >>= DIGIT_BIT;
+  if (c->used + 1 > FP_SIZE) {
+    return FP_VAL;
   }
-  d->dp[i] = (fp_digit)w;
-  d->used = i + 1;
+  if (c == d) {
+    return FP_VAL;
+  }
+
+  /* In constant time, subtract b from a putting result in d. */
+  w = 0;
+  for (i = 0; i < c->used; i++) {
+    w         += a->dp[i];
+    w         -= b->dp[i];
+    d->dp[i]   = (fp_digit)w;
+    w        >>= DIGIT_BIT;
+  }
+  w  += a->dp[i];
+  w  -= b->dp[i];
+  w >>= DIGIT_BIT;
+  /* When w is negative then we need to add modulus to make result positive. */
+  mask = (fp_digit)0 - (w < 0);
+  /* Constant time, conditionally, add modulus to difference. */
+  w = 0;
+  for (i = 0; i < c->used; i++) {
+    w         += d->dp[i];
+    w         += c->dp[i] & mask;
+    d->dp[i]   = (fp_digit)w;
+    w        >>= DIGIT_BIT;
+  }
+  /* Result will always have digits equal to or less than those in modulus. */
+  d->used = i;
   d->sign = FP_ZPOS;
   fp_clamp(d);
-  s_fp_sub(d, b, d);
 
   return FP_OKAY;
 }
 
-/* d = a + b (mod c) - constant time (|a| < c and |b| < c and positive) */
+/* d = a + b (mod c) - constant time (a < c and b < c and all positive)
+ * c and d must not be the same pointers.
+ */
 int fp_addmod_ct(fp_int *a, fp_int *b, fp_int *c, fp_int *d)
 {
-  fp_word  w = 0;
+  fp_word  w;
+  fp_sword s;
   fp_digit mask;
   int i;
 
-  s_fp_add(a, b, d);
-  mask = 0 - (fp_cmp_mag_ct(d, c, c->used + 1) != (fp_digit)FP_LT);
-  for (i = 0; i < c->used; i++) {
-      w        += c->dp[i] & mask;
-      w         = d->dp[i] - w;
-      d->dp[i]  = (fp_digit)w;
-      w         = (w >> DIGIT_BIT)&1;
+  if (c == d) {
+    return FP_VAL;
   }
-  d->dp[i] = 0;
+
+  /* Add a to b into d. Do the subtract of modulus but don't store result.
+   * When subtract result is negative, the overflow will be negative.
+   * Only need to subtract mod when result is positive - overflow is positive.
+   */
+  w = 0;
+  s = 0;
+  for (i = 0; i < c->used; i++) {
+    w         += a->dp[i];
+    w         += b->dp[i];
+    d->dp[i]   = (fp_digit)w;
+    s         += (fp_digit)w;
+    s         -= c->dp[i];
+    w        >>= DIGIT_BIT;
+    s        >>= DIGIT_BIT;
+  }
+  s += (fp_digit)w;
+  /* s will be positive when subtracting modulus is needed. */
+  mask = (fp_digit)0 - (s >= 0);
+
+  /* Constant time, conditionally, subtract modulus from sum. */
+  w = 0;
+  for (i = 0; i < c->used; i++) {
+    w        += c->dp[i] & mask;
+    w         = d->dp[i] - w;
+    d->dp[i]  = (fp_digit)w;
+    w         = (w >> DIGIT_BIT)&1;
+  }
+  /* Result will always have digits equal to or less than those in modulus. */
   d->used = i;
-  d->sign = a->sign;
+  d->sign = FP_ZPOS;
   fp_clamp(d);
 
   return FP_OKAY;
@@ -3337,7 +3382,7 @@ static int fp_montgomery_reduce_mulx(fp_int *a, fp_int *m, fp_digit mp, int ct)
    /* bail if too large */
    if (m->used > (FP_SIZE/2)) {
       (void)mu;                     /* shut up compiler */
-      return FP_OKAY;
+      return FP_VAL;
    }
 
 #ifdef TFM_SMALL_MONT_SET
@@ -3359,7 +3404,16 @@ static int fp_montgomery_reduce_mulx(fp_int *a, fp_int *m, fp_digit mp, int ct)
    pa = m->used;
 
    /* copy the input */
+#ifdef TFM_TIMING_RESISTANT
+   if (a->used <= m->used) {
+      oldused = m->used;
+   }
+   else {
+      oldused = m->used * 2;
+   }
+#else
    oldused = a->used;
+#endif
    for (x = 0; x < oldused; x++) {
        c[x] = a->dp[x];
    }
@@ -3405,7 +3459,7 @@ static int fp_montgomery_reduce_mulx(fp_int *a, fp_int *m, fp_digit mp, int ct)
   a->used = pa+1;
   fp_clamp(a);
 
-#ifdef WOLFSSL_MONT_RED_NCT
+#ifndef WOLFSSL_MONT_RED_CT
   /* if A >= m then A = A - m */
   if (fp_cmp_mag (a, m) != FP_LT) {
     s_fp_sub (a, m, a);
@@ -5400,7 +5454,7 @@ static wcchar fp_s_rmap = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 static int fp_read_radix_16(fp_int *a, const char *str)
 {
   int     i, j, k, neg;
-  char    ch;
+  int     ch;
 
   /* if the leading digit is a
    * minus set the sign to negative.
@@ -5415,15 +5469,10 @@ static int fp_read_radix_16(fp_int *a, const char *str)
   j = 0;
   k = 0;
   for (i = (int)(XSTRLEN(str) - 1); i >= 0; i--) {
-      ch = str[i];
-      if (ch >= '0' && ch <= '9')
-          ch -= (char)'0';
-      else if (ch >= 'A' && ch <= 'F')
-          ch -= (char)'A' - 10;
-      else if (ch >= 'a' && ch <= 'f')
-          ch -= (char)'a' - 10;
-      else
-          return FP_VAL;
+      ch = (int)HexCharToByte(str[i]);
+      if (ch < 0) {
+        return FP_VAL;
+      }
 
       k += j == DIGIT_BIT;
       j &= DIGIT_BIT - 1;

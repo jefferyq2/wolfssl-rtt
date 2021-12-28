@@ -61,7 +61,8 @@
     #include <wolfssl/wolfcrypt/port/st/stsafe.h>
 #endif
 
-#if defined(OPENSSL_EXTRA) || defined(HAVE_WEBSERVER)
+#if (defined(OPENSSL_EXTRA) || defined(HAVE_WEBSERVER)) \
+    && !defined(WOLFCRYPT_ONLY)
     #include <wolfssl/openssl/evp.h>
 #endif
 
@@ -89,6 +90,10 @@
 
 #ifdef HAVE_CAVIUM_OCTEON_SYNC
     #include <wolfssl/wolfcrypt/port/cavium/cavium_octeon_sync.h>
+#endif
+
+#if defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_INIT)
+#include <wolfssl/wolfcrypt/port/nxp/se050_port.h>
 #endif
 
 #ifdef WOLFSSL_SCE
@@ -157,6 +162,14 @@ int wolfCrypt_Init(void)
         }
     #endif
 
+    #if defined(WOLFSSL_LINUXKM_SIMD_X86)
+        ret = allocate_wolfcrypt_linuxkm_fpu_states();
+        if (ret != 0) {
+            WOLFSSL_MSG("allocate_wolfcrypt_linuxkm_fpu_states failed");
+            return ret;
+        }
+    #endif
+
     #if WOLFSSL_CRYPT_HW_MUTEX
         /* If crypto hardware mutex protection is enabled, then initialize it */
         ret = wolfSSL_CryptHwMutexInit();
@@ -219,6 +232,10 @@ int wolfCrypt_Init(void)
     #ifdef WOLFSSL_SILABS_SE_ACCEL
         /* init handles if it is already initialized */
         ret = sl_se_init();
+    #endif
+
+    #if defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_INIT)
+        ret = wc_se050_init(NULL);
     #endif
 
     #ifdef WOLFSSL_ARMASM
@@ -356,6 +373,9 @@ int wolfCrypt_Cleanup(void)
         rpcmem_deinit();
         wolfSSL_CleanupHandle();
     #endif
+    #if defined(WOLFSSL_LINUXKM_SIMD_X86)
+        free_wolfcrypt_linuxkm_fpu_states();
+    #endif
     }
 
     return ret;
@@ -424,6 +444,8 @@ int wc_FileLoad(const char* fname, unsigned char** buf, size_t* bufLen,
 int wc_FileExists(const char* fname)
 {
     struct ReadDirCtx ctx;
+
+    XMEMSET(&ctx, 0, sizeof(ctx));
 
     if (fname == NULL)
         return 0;
@@ -2438,9 +2460,15 @@ time_t time(time_t * timer)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
     struct timespec ts;
     getnstimeofday(&ts);
-    ret = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    ret = ts.tv_sec;
 #else
-    ret = ktime_get_real_seconds();
+    struct timespec64 ts;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+    ts = current_kernel_time64();
+#else
+    ktime_get_coarse_real_ts64(&ts);
+#endif
+    ret = ts.tv_sec;
 #endif
     if (timer)
         *timer = ret;
@@ -2450,7 +2478,7 @@ time_t time(time_t * timer)
 
 #endif /* !NO_ASN_TIME */
 
-#ifndef WOLFSSL_LEANPSK
+#if !defined(WOLFSSL_LEANPSK) && !defined(STRING_USER)
 char* mystrnstr(const char* s1, const char* s2, unsigned int n)
 {
     unsigned int s2_len = (unsigned int)XSTRLEN(s2);
@@ -2529,8 +2557,7 @@ char* mystrnstr(const char* s1, const char* s2, unsigned int n)
 
 #endif /* WOLFSSL_NUCLEUS_1_2 */
 
-#ifdef WOLFSSL_LINUXKM
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+#if defined(WOLFSSL_LINUXKM) && defined(HAVE_KVMALLOC)
     /* adapted from kvrealloc() draft by Changli Gao, 2010-05-13 */
     void *lkm_realloc(void *ptr, size_t newsize) {
         void *nptr;
@@ -2542,7 +2569,7 @@ char* mystrnstr(const char* s1, const char* s2, unsigned int n)
         }
 
         if (unlikely(ptr == NULL))
-            return kvmalloc(newsize, GFP_KERNEL);
+            return kvmalloc_node(newsize, GFP_KERNEL, NUMA_NO_NODE);
 
         if (is_vmalloc_addr(ptr)) {
             /* no way to discern the size of the old allocation,
@@ -2552,21 +2579,25 @@ char* mystrnstr(const char* s1, const char* s2, unsigned int n)
              */
             return NULL;
         } else {
+#ifndef __PIE__
             struct page *page;
 
             page = virt_to_head_page(ptr);
             if (PageSlab(page) || PageCompound(page)) {
                 if (newsize < PAGE_SIZE)
+#endif /* ! __PIE__ */
                     return krealloc(ptr, newsize, GFP_KERNEL);
+#ifndef __PIE__
                 oldsize = ksize(ptr);
             } else {
                 oldsize = page->private;
                 if (newsize <= oldsize)
                     return ptr;
             }
+#endif /* ! __PIE__ */
 	}
 
-	nptr = kvmalloc(newsize, GFP_KERNEL);
+	nptr = kvmalloc_node(newsize, GFP_KERNEL, NUMA_NO_NODE);
 	if (nptr != NULL) {
             memcpy(nptr, ptr, oldsize);
             kvfree(ptr);
@@ -2574,8 +2605,7 @@ char* mystrnstr(const char* s1, const char* s2, unsigned int n)
 
 	return nptr;
     }
-#endif /* >= 4.12 */
-#endif /* WOLFSSL_LINUXKM */
+#endif /* WOLFSSL_LINUXKM && HAVE_KVMALLOC */
 
 #if defined(WOLFSSL_TI_CRYPT) || defined(WOLFSSL_TI_HASH)
     #include <wolfcrypt/src/port/ti/ti-ccm.c>  /* initialize and Mutex for TI Crypt Engine */

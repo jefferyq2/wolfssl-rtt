@@ -1,4 +1,4 @@
-#include <stdint.h>
+#include <stddef.h>
 #include <wolfcrypt/test/test.h>
 #include <wolfcrypt/benchmark/benchmark.h>
 

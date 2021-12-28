@@ -31,8 +31,8 @@
 
 #ifndef NO_DES3
 
-#if defined(HAVE_FIPS) && \
-	defined(HAVE_FIPS_VERSION) && (HAVE_FIPS_VERSION >= 2)
+#if defined(HAVE_FIPS) && defined(HAVE_FIPS_VERSION) && \
+    (HAVE_FIPS_VERSION == 2 || HAVE_FIPS_VERSION == 3)
 
     /* set NO_WRAPPERS before headers, use direct internal f()s not wrappers */
     #define FIPS_NO_WRAPPERS
@@ -1422,7 +1422,7 @@
             byte* const  pc1m = buffer;            /* place to modify pc1 into */
             byte* const  pcr  = pc1m + 56;         /* place to rotate pc1 into */
             byte* const  ks   = pcr  + 56;
-            register int i, j, l;
+            int i, j, l;
             int          m;
 
             for (j = 0; j < 56; j++) {             /* convert pc1 to bits of key  */

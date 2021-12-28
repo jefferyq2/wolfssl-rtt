@@ -299,7 +299,7 @@ WC_STATIC WC_INLINE void xorbuf(void* buf, const void* mask, word32 count)
 #ifndef WOLFSSL_NO_FORCE_ZERO
 /* This routine fills the first len bytes of the memory area pointed by mem
    with zeros. It ensures compiler optimizations doesn't skip it  */
-WC_STATIC WC_INLINE void ForceZero(const void* mem, word32 len)
+WC_STATIC WC_INLINE void ForceZero(void* mem, word32 len)
 {
     volatile byte* z = (volatile byte*)mem;
 
@@ -422,6 +422,35 @@ WC_STATIC WC_INLINE word32 btoi(byte b)
 }
 #endif
 
+WC_STATIC WC_INLINE char HexCharToByte(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+        ch -= '0';
+    else if (ch >= 'A' && ch <= 'F')
+        ch -= 'A' - 10;
+    else if (ch >= 'a' && ch <= 'f')
+        ch -= 'a' - 10;
+    else
+        ch = -1; /* error case - return code must be signed */
+    return ch;
+}
+
+WC_STATIC WC_INLINE char ByteToHex(byte in)
+{
+    static const char kHexChar[] = { '0', '1', '2', '3', '4', '5', '6', '7',
+                                     '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+    return (char)(kHexChar[in & 0xF]);
+}
+
+WC_STATIC WC_INLINE int ByteToHexStr(byte in, char* out)
+{
+    if (out == NULL)
+        return -1;
+
+    out[0] = ByteToHex(in >> 4);
+    out[1] = ByteToHex(in & 0xf);
+    return 0;
+}
 
 #ifndef WOLFSSL_NO_CT_OPS
 /* Constant time - mask set when a > b. */
@@ -515,7 +544,6 @@ WC_STATIC WC_INLINE byte ctSetLTE(int a, int b)
     return (byte)(((word32)a - b - 1) >> 31);
 }
 #endif
-
 
 #undef WC_STATIC
 

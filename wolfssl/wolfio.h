@@ -80,11 +80,6 @@
         #include <sys/socket.h>
     #elif defined(FREERTOS_TCP)
         #include "FreeRTOS_Sockets.h"
-    #elif defined(RTTHREAD)
-        #include <unistd.h>
-        #include <sys/socket.h>
-        #include <arpa/inet.h>
-        #include <netdb.h>
     #elif defined(WOLFSSL_IAR_ARM)
         /* nothing */
     #elif defined(HAVE_NETX_BSD)
@@ -156,6 +151,8 @@
         #elif defined(EBSNET)
             #include "rtipapi.h"  /* errno */
             #include "socket.h"
+        #elif defined(NETOS)
+            #include <sockapi.h>
         #elif !defined(DEVKITPRO) && !defined(WOLFSSL_PICOTCP) \
                 && !defined(WOLFSSL_CONTIKI) && !defined(WOLFSSL_WICED) \
                 && !defined(WOLFSSL_GNRC) && !defined(WOLFSSL_RIOT_OS)
@@ -166,7 +163,10 @@
             #ifdef __PPU
                 #include <netex/errno.h>
             #else
-                #include <sys/ioctl.h>
+                #if defined(RTTHREAD) && (RTTHREAD_VERSION < 40004)
+                #else
+                    #include <sys/ioctl.h>
+                #endif
             #endif
         #endif
     #endif
@@ -323,6 +323,9 @@
 #elif defined(WOLFSSL_LINUXKM)
     #define SEND_FUNCTION linuxkm_send
     #define RECV_FUNCTION linuxkm_recv
+#elif defined(WOLFSSL_SGX)
+    #define SEND_FUNCTION send
+    #define RECV_FUNCTION recv
 #else
     #define SEND_FUNCTION send
     #define RECV_FUNCTION recv
@@ -378,6 +381,10 @@
 #endif
 WOLFSSL_API  int wolfIO_TcpConnect(SOCKET_T* sockfd, const char* ip,
     unsigned short port, int to_sec);
+#ifdef HAVE_SOCKADDR
+WOLFSSL_API int wolfIO_TcpAccept(SOCKET_T sockfd, SOCKADDR* peer_addr, XSOCKLENT* peer_len);
+#endif
+WOLFSSL_API int wolfIO_TcpBind(SOCKET_T* sockfd, word16 port);
 WOLFSSL_API  int wolfIO_Send(SOCKET_T sd, char *buf, int sz, int wrFlags);
 WOLFSSL_API  int wolfIO_Recv(SOCKET_T sd, char *buf, int sz, int rdFlags);
 
@@ -430,12 +437,6 @@ WOLFSSL_API int BioReceive(WOLFSSL* ssl, char* buf, int sz, void* ctx);
             WOLFSSL_API int EmbedReceiveFromMcast(WOLFSSL* ssl,
                                                   char* buf, int sz, void*);
         #endif /* WOLFSSL_MULTICAST */
-        #ifdef WOLFSSL_SESSION_EXPORT
-            WOLFSSL_API int EmbedGetPeer(WOLFSSL* ssl, char* ip, int* ipSz,
-                                                unsigned short* port, int* fam);
-            WOLFSSL_API int EmbedSetPeer(WOLFSSL* ssl, char* ip, int ipSz,
-                                                  unsigned short port, int fam);
-        #endif /* WOLFSSL_SESSION_EXPORT */
     #endif /* WOLFSSL_DTLS */
 #endif /* USE_WOLFSSL_IO */
 
@@ -594,16 +595,20 @@ WOLFSSL_API void wolfSSL_SetIOWriteFlags(WOLFSSL* ssl, int flags);
     WOLFSSL_API void  wolfSSL_SetCookieCtx(WOLFSSL* ssl, void *ctx);
     WOLFSSL_API void* wolfSSL_GetCookieCtx(WOLFSSL* ssl);
 
-    #ifdef WOLFSSL_SESSION_EXPORT
-        typedef int (*CallbackGetPeer)(WOLFSSL* ssl, char* ip, int* ipSz,
-                                            unsigned short* port, int* fam);
-        typedef int (*CallbackSetPeer)(WOLFSSL* ssl, char* ip, int ipSz,
-                                              unsigned short port, int fam);
-
-        WOLFSSL_API void wolfSSL_CTX_SetIOGetPeer(WOLFSSL_CTX*, CallbackGetPeer);
-        WOLFSSL_API void wolfSSL_CTX_SetIOSetPeer(WOLFSSL_CTX*, CallbackSetPeer);
-    #endif /* WOLFSSL_SESSION_EXPORT */
 #endif
+#ifdef WOLFSSL_SESSION_EXPORT
+    typedef int (*CallbackGetPeer)(WOLFSSL* ssl, char* ip, int* ipSz,
+                                        unsigned short* port, int* fam);
+    typedef int (*CallbackSetPeer)(WOLFSSL* ssl, char* ip, int ipSz,
+                                          unsigned short port, int fam);
+
+    WOLFSSL_API void wolfSSL_CTX_SetIOGetPeer(WOLFSSL_CTX*, CallbackGetPeer);
+    WOLFSSL_API void wolfSSL_CTX_SetIOSetPeer(WOLFSSL_CTX*, CallbackSetPeer);
+    WOLFSSL_API int EmbedGetPeer(WOLFSSL* ssl, char* ip, int* ipSz,
+                                                unsigned short* port, int* fam);
+    WOLFSSL_API int EmbedSetPeer(WOLFSSL* ssl, char* ip, int ipSz,
+                                                  unsigned short port, int fam);
+#endif /* WOLFSSL_SESSION_EXPORT */
 
 
 

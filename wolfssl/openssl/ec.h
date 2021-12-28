@@ -45,7 +45,7 @@ enum {
     NID_X9_62_prime192v3 = 411,
     NID_X9_62_prime239v1 = 412,
     NID_X9_62_prime239v2 = 413,
-    NID_X9_62_prime239v3 = 414,
+    NID_X9_62_prime239v3 = 418, /* Previous value conflicted with AES128CBCb */
     NID_X9_62_prime256v1 = 415,
     NID_secp112r1 = 704,
     NID_secp112r2 = 705,
@@ -117,10 +117,14 @@ struct WOLFSSL_EC_KEY {
     WOLFSSL_BIGNUM *priv_key;
 
     void*          internal;     /* our ECC Key */
-    char           inSet;        /* internal set from external ? */
-    char           exSet;        /* external set from internal ? */
+    void*          heap;
     char           form;         /* Either POINT_CONVERSION_UNCOMPRESSED or
                                   * POINT_CONVERSION_COMPRESSED */
+    word16 pkcs8HeaderSz;
+
+    /* option bits */
+    byte inSet:1;        /* internal set from external ? */
+    byte exSet:1;        /* external set from internal ? */
 };
 
 struct WOLFSSL_EC_BUILTIN_CURVE {
@@ -153,6 +157,9 @@ WOLFSSL_API
 int wolfSSL_EC_POINT_oct2point(const WOLFSSL_EC_GROUP *group,
                                WOLFSSL_EC_POINT *p, const unsigned char *buf,
                                size_t len, WOLFSSL_BN_CTX *ctx);
+WOLFSSL_API
+WOLFSSL_EC_KEY *wolfSSL_o2i_ECPublicKey(WOLFSSL_EC_KEY **a, const unsigned char **in,
+                                        long len);
 WOLFSSL_API
 int wolfSSL_i2o_ECPublicKey(const WOLFSSL_EC_KEY *in, unsigned char **out);
 WOLFSSL_API
@@ -194,6 +201,8 @@ WOLFSSL_EC_KEY *wolfSSL_EC_KEY_new_by_curve_name(int nid);
 WOLFSSL_API const char* wolfSSL_EC_curve_nid2nist(int nid);
 WOLFSSL_API int wolfSSL_EC_curve_nist2nid(const char* name);
 WOLFSSL_API
+WOLFSSL_EC_KEY *wolfSSL_EC_KEY_new_ex(void* heap, int devId);
+WOLFSSL_API
 WOLFSSL_EC_KEY *wolfSSL_EC_KEY_new(void);
 WOLFSSL_API
 int wolfSSL_EC_KEY_set_group(WOLFSSL_EC_KEY *key, WOLFSSL_EC_GROUP *group);
@@ -204,10 +213,15 @@ void wolfSSL_EC_KEY_set_asn1_flag(WOLFSSL_EC_KEY *key, int asn1_flag);
 WOLFSSL_API
 int wolfSSL_EC_KEY_set_public_key(WOLFSSL_EC_KEY *key,
                                   const WOLFSSL_EC_POINT *pub);
+WOLFSSL_API int wolfSSL_EC_KEY_check_key(const WOLFSSL_EC_KEY *key);
 WOLFSSL_API int wolfSSL_ECDSA_size(const WOLFSSL_EC_KEY *key);
 WOLFSSL_API int wolfSSL_ECDSA_sign(int type, const unsigned char *digest,
                                    int digestSz, unsigned char *sig,
                                    unsigned int *sigSz, WOLFSSL_EC_KEY *key);
+WOLFSSL_API int wolfSSL_ECDSA_verify(int type, const unsigned char *digest,
+                                   int digestSz, const unsigned char *sig,
+                                   int sigSz, WOLFSSL_EC_KEY *key);
+
 WOLFSSL_API
 void wolfSSL_EC_GROUP_set_asn1_flag(WOLFSSL_EC_GROUP *group, int flag);
 WOLFSSL_API
@@ -296,9 +310,11 @@ char* wolfSSL_EC_POINT_point2hex(const WOLFSSL_EC_GROUP* group,
 #define EC_KEY_generate_key             wolfSSL_EC_KEY_generate_key
 #define EC_KEY_set_asn1_flag            wolfSSL_EC_KEY_set_asn1_flag
 #define EC_KEY_set_public_key           wolfSSL_EC_KEY_set_public_key
+#define EC_KEY_check_key                wolfSSL_EC_KEY_check_key
 
 #define ECDSA_size                      wolfSSL_ECDSA_size
 #define ECDSA_sign                      wolfSSL_ECDSA_sign
+#define ECDSA_verify                    wolfSSL_ECDSA_verify
 
 #define EC_GROUP_free                   wolfSSL_EC_GROUP_free
 #define EC_GROUP_set_asn1_flag          wolfSSL_EC_GROUP_set_asn1_flag
@@ -338,6 +354,7 @@ char* wolfSSL_EC_POINT_point2hex(const WOLFSSL_EC_GROUP* group,
 #define EC_POINT_oct2point              wolfSSL_EC_POINT_oct2point
 #define EC_POINT_point2bn               wolfSSL_EC_POINT_point2bn
 #define EC_POINT_is_on_curve            wolfSSL_EC_POINT_is_on_curve
+#define o2i_ECPublicKey                 wolfSSL_o2i_ECPublicKey
 #define i2o_ECPublicKey                 wolfSSL_i2o_ECPublicKey
 #define i2d_EC_PUBKEY                   wolfSSL_i2o_ECPublicKey
 #define d2i_ECPrivateKey                wolfSSL_d2i_ECPrivateKey

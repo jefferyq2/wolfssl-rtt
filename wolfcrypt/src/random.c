@@ -132,7 +132,7 @@ int wc_RNG_GenerateByte(WC_RNG* rng, byte* b)
     #include <wnr.h>
     #include <wolfssl/wolfcrypt/logging.h>
     wolfSSL_Mutex wnr_mutex;    /* global netRandom mutex */
-    int wnr_timeout     = 0;    /* entropy timeout, mililseconds */
+    int wnr_timeout     = 0;    /* entropy timeout, milliseconds */
     int wnr_mutex_init  = 0;    /* flag for mutex init */
     wnr_context*  wnr_ctx;      /* global netRandom context */
 #elif defined(FREESCALE_KSDK_2_0_TRNG)
@@ -173,6 +173,9 @@ int wc_RNG_GenerateByte(WC_RNG* rng, byte* b)
 #include <wolfssl/wolfcrypt/port/silabs/silabs_random.h>
 #endif
 
+#if defined(WOLFSSL_IOTSAFE) && defined(HAVE_IOTSAFE_HWRNG)
+#include <wolfssl/wolfcrypt/port/iotsafe/iotsafe.h>
+#endif
 
 #if defined(HAVE_INTEL_RDRAND) || defined(HAVE_INTEL_RDSEED)
     static word32 intel_flags = 0;
@@ -286,11 +289,25 @@ int wc_RNG_GenerateByte(WC_RNG* rng, byte* b)
 #define MAX_SEED_SZ    (SEED_SZ + SEED_SZ/2 + SEED_BLOCK_SZ)
 
 
+#ifdef WC_RNG_SEED_CB
+
+static wc_RngSeed_Cb seedCb = NULL;
+
+int wc_SetSeed_Cb(wc_RngSeed_Cb cb)
+{
+    seedCb = cb;
+    return 0;
+}
+
+#endif
+
+
 /* Internal return codes */
 #define DRBG_SUCCESS      0
 #define DRBG_FAILURE      1
 #define DRBG_NEED_RESEED  2
 #define DRBG_CONT_FAILURE 3
+#define DRBG_NO_SEED_CB   4
 
 /* RNG health states */
 #define DRBG_NOT_INIT     0
@@ -803,7 +820,19 @@ static int _InitRng(WC_RNG* rng, byte* nonce, word32 nonceSz,
         rng->drbg = (struct DRBG*)&rng->drbg_data;
 #endif
         if (ret == 0) {
+#ifdef WC_RNG_SEED_CB
+            if (seedCb == NULL) {
+                ret = DRBG_NO_SEED_CB;
+            }
+            else {
+                ret = seedCb(&rng->seed, seed, seedSz);
+                if (ret != 0) {
+                    ret = DRBG_FAILURE;
+                }
+            }
+#else
             ret = wc_GenerateSeed(&rng->seed, seed, seedSz);
+#endif
             if (ret == 0)
                 ret = wc_RNG_TestSeed(seed, seedSz);
             else {
@@ -1883,14 +1912,12 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
     {
         status_t status;
         status = TRNG_GetRandomData(TRNG0, output, sz);
+        (void)os;
         if (status == kStatus_Success)
         {
             return(0);
         }
-        else
-        {
-            return RAN_BLOCK_E;
-        }
+        return RAN_BLOCK_E;
     }
 
 #elif defined(FREESCALE_KSDK_2_0_RNGA)
@@ -1899,14 +1926,12 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
     {
         status_t status;
         status = RNGA_GetRandomData(RNG, output, sz);
+        (void)os;
         if (status == kStatus_Success)
         {
             return(0);
         }
-        else
-        {
-            return RAN_BLOCK_E;
-        }
+        return RAN_BLOCK_E;
     }
 
 
@@ -1914,8 +1939,14 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
 
     int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
     {
-        RNGA_DRV_GetRandomData(RNGA_INSTANCE, output, sz);
-        return 0;
+        status_t status;
+        status = RNGA_GetRandomData(RNG, output, sz);
+        (void)os;
+        if (status == kStatus_Success)
+        {
+            return(0);
+        }
+        return RAN_BLOCK_E;
     }
 
 #elif defined(FREESCALE_MQX) || defined(FREESCALE_KSDK_MQX) || \
@@ -2517,7 +2548,7 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
 #elif defined(WOLFSSL_SAFERTOS) || defined(WOLFSSL_LEANPSK) || \
       defined(WOLFSSL_IAR_ARM)  || defined(WOLFSSL_MDK_ARM) || \
       defined(WOLFSSL_uITRON4)  || defined(WOLFSSL_uTKERNEL2) || \
-      defined(WOLFSSL_LPC43xx)  || defined(WOLFSSL_STM32F2xx) || \
+      defined(WOLFSSL_LPC43xx)  || defined(NO_STM32_RNG) || \
       defined(MBED)             || defined(WOLFSSL_EMBOS) || \
       defined(WOLFSSL_GENSEED_FORTEST) || defined(WOLFSSL_CHIBIOS) || \
       defined(WOLFSSL_CONTIKI)  || defined(WOLFSSL_AZSPHERE)
@@ -2569,6 +2600,24 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
             }
             return 0;
         }
+#elif defined(WOLFSSL_SE050)
+     #include <wolfssl/wolfcrypt/port/nxp/se050_port.h>
+    
+    int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz){
+        int ret = 0;
+        
+        (void)os;
+        
+        if (output == NULL) {
+            return BUFFER_E;
+        }
+        ret = wolfSSL_CryptHwMutexLock();
+        if (ret == 0) {
+            ret = se050_get_random_number(sz, output);
+            wolfSSL_CryptHwMutexUnLock();
+        }
+        return ret;
+    }
 
 #elif defined(DOLPHIN_EMULATOR)
 
@@ -2584,7 +2633,7 @@ int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
 
 #elif defined(NO_DEV_RANDOM)
 
-    //#error "you need to write an os specific wc_GenerateSeed() here"
+    #warning "you need to write an os specific wc_GenerateSeed() here"
 
     /*
     int wc_GenerateSeed(OS_Seed* os, byte* output, word32 sz)
