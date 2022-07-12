@@ -186,7 +186,7 @@ enum {
     /* Shamir's dual add constants */
     SHAMIR_PRECOMP_SZ = 16,
 
-#ifdef WOLF_CRYPTO_CB
+#ifdef WOLF_PRIVATE_KEY_ID
     ECC_MAX_ID_LEN    = 32,
     ECC_MAX_LABEL_LEN = 32,
 #endif
@@ -293,7 +293,7 @@ typedef struct ecc_set_type {
 } ecc_set_type;
 #else
 #define MAX_ECC_NAME 16
-#define MAX_ECC_STRING ((MAX_ECC_BYTES * 2) + 1)
+#define MAX_ECC_STRING ((MAX_ECC_BYTES * 2) + 2)
     /* The values are stored as text strings. */
 
 typedef struct ecc_set_type {
@@ -329,12 +329,12 @@ typedef struct ecc_set_type {
  * mp_ints for the components of the point. With ALT_ECC_SIZE, the components
  * of the point are pointers that are set to each of a three item array of
  * alt_fp_ints. While an mp_int will have 4096 bits of digit inside the
- * structure, the alt_fp_int will only have 512 bits for ECC 256-bit and 
- * 1056-bits for ECC 521-bit. A size value was added in the ALT case, as well, 
- * and is set by mp_init() and alt_fp_init(). The functions fp_zero() and 
- * fp_copy() use the size parameter. An int needs to be initialized before 
- * using it instead of just fp_zeroing it, the init will call zero. The 
- * FP_MAX_BITS_ECC defaults to calculating based on MAX_ECC_BITS, but 
+ * structure, the alt_fp_int will only have 512 bits for ECC 256-bit and
+ * 1056-bits for ECC 521-bit. A size value was added in the ALT case, as well,
+ * and is set by mp_init() and alt_fp_init(). The functions fp_zero() and
+ * fp_copy() use the size parameter. An int needs to be initialized before
+ * using it instead of just fp_zeroing it, the init will call zero. The
+ * FP_MAX_BITS_ECC defaults to calculating based on MAX_ECC_BITS, but
  * can be set to change the number of bits used in the alternate FP_INT.
  *
  * The ALT_ECC_SIZE option only applies to stack based fast math USE_FAST_MATH.
@@ -359,6 +359,9 @@ typedef struct ecc_set_type {
 #endif
 
 /* verify alignment */
+#if CHAR_BIT == 0
+   #error CHAR_BIT must be nonzero
+#endif
 #if FP_MAX_BITS_ECC % CHAR_BIT
     #error FP_MAX_BITS_ECC must be a multiple of CHAR_BIT
 #endif
@@ -395,7 +398,7 @@ typedef struct {
     mp_int* z;        /* The z coordinate */
     alt_fp_int xyz[3];
 #endif
-#ifdef WOLFSSL_SMALL_STACK_CACHE
+#if defined(WOLFSSL_SMALL_STACK_CACHE) && !defined(WOLFSSL_ECC_NO_SMALL_STACK)
     ecc_key* key;
 #endif
 } ecc_point;
@@ -437,7 +440,7 @@ struct ecc_key {
     ecc_point pubkey;   /* public key */
     mp_int    k;        /* private key */
 
-#ifdef WOLFSSL_QNX_CAAM
+#ifdef WOLFSSL_CAAM
     word32 blackKey;     /* address of key encrypted and in secure memory */
     word32 securePubKey; /* address of public key in secure memory */
     int    partNum; /* partition number*/
@@ -463,7 +466,7 @@ struct ecc_key {
 #endif
 #ifdef WOLFSSL_KCAPI_ECC
     struct kcapi_handle* handle;
-    byte pubkey_raw[KCAPI_PARAM_SZ + MAX_ECC_BYTES * 2];
+    byte pubkey_raw[MAX_ECC_BYTES * 2];
 #endif
 
 #ifdef WOLFSSL_ASYNC_CRYPT
@@ -478,7 +481,7 @@ struct ecc_key {
         CertSignCtx certSignCtx; /* context info for cert sign (MakeSignature) */
     #endif
 #endif /* WOLFSSL_ASYNC_CRYPT */
-#ifdef WOLF_CRYPTO_CB
+#ifdef WOLF_PRIVATE_KEY_ID
     byte id[ECC_MAX_ID_LEN];
     int  idLen;
     char label[ECC_MAX_LABEL_LEN];
@@ -489,14 +492,16 @@ struct ecc_key {
 #endif
 
 #if defined(WOLFSSL_ECDSA_SET_K) || defined(WOLFSSL_ECDSA_SET_K_ONE_LOOP) || \
-    defined(WOLFSSL_ECDSA_DETERMINISTIC_K)
+    defined(WOLFSSL_ECDSA_DETERMINISTIC_K) || \
+    defined(WOLFSSL_ECDSA_DETERMINISTIC_K_VARIANT)
     mp_int *sign_k;
 #endif
-#if defined(WOLFSSL_ECDSA_DETERMINISTIC_K)
+#if defined(WOLFSSL_ECDSA_DETERMINISTIC_K) || \
+    defined(WOLFSSL_ECDSA_DETERMINISTIC_K_VARIANT)
     byte deterministic:1;
 #endif
 
-#ifdef WOLFSSL_SMALL_STACK_CACHE
+#if defined(WOLFSSL_SMALL_STACK_CACHE) && !defined(WOLFSSL_ECC_NO_SMALL_STACK)
     mp_int* t1;
     mp_int* t2;
 #ifdef ALT_ECC_SIZE
@@ -518,8 +523,8 @@ struct ecc_key {
 };
 
 
-WOLFSSL_ABI WOLFSSL_API ecc_key* wc_ecc_key_new(void*);
-WOLFSSL_ABI WOLFSSL_API void wc_ecc_key_free(ecc_key*);
+WOLFSSL_ABI WOLFSSL_API ecc_key* wc_ecc_key_new(void* heap);
+WOLFSSL_ABI WOLFSSL_API void wc_ecc_key_free(ecc_key* key);
 
 
 /* ECC predefined curve sets  */
@@ -539,8 +544,8 @@ ECC_API int ecc_mul2add(ecc_point* A, mp_int* kA,
                 ecc_point* B, mp_int* kB,
                 ecc_point* C, mp_int* a, mp_int* modulus, void* heap);
 
-ECC_API int ecc_map(ecc_point*, mp_int*, mp_digit);
-ECC_API int ecc_map_ex(ecc_point*, mp_int*, mp_digit, int ct);
+ECC_API int ecc_map(ecc_point* P, mp_int* modulus, mp_digit mp);
+ECC_API int ecc_map_ex(ecc_point* P, mp_int* modulus, mp_digit mp, int ct);
 ECC_API int ecc_projective_add_point(ecc_point* P, ecc_point* Q, ecc_point* R,
                                      mp_int* a, mp_int* modulus, mp_digit mp);
 ECC_API int ecc_projective_dbl_point(ecc_point* P, ecc_point* R, mp_int* a,
@@ -598,7 +603,8 @@ int wc_ecc_sign_hash(const byte* in, word32 inlen, byte* out, word32 *outlen,
 WOLFSSL_API
 int wc_ecc_sign_hash_ex(const byte* in, word32 inlen, WC_RNG* rng,
                         ecc_key* key, mp_int *r, mp_int *s);
-#ifdef WOLFSSL_ECDSA_DETERMINISTIC_K
+#if defined(WOLFSSL_ECDSA_DETERMINISTIC_K) || \
+    defined(WOLFSSL_ECDSA_DETERMINISTIC_K_VARIANT)
 WOLFSSL_API
 int wc_ecc_set_deterministic(ecc_key* key, byte flag);
 WOLFSSL_API
@@ -615,17 +621,17 @@ int wc_ecc_sign_set_k(const byte* k, word32 klen, ecc_key* key);
 #ifdef HAVE_ECC_VERIFY
 WOLFSSL_API
 int wc_ecc_verify_hash(const byte* sig, word32 siglen, const byte* hash,
-                    word32 hashlen, int* stat, ecc_key* key);
+                    word32 hashlen, int* res, ecc_key* key);
 WOLFSSL_API
 int wc_ecc_verify_hash_ex(mp_int *r, mp_int *s, const byte* hash,
-                          word32 hashlen, int* stat, ecc_key* key);
+                          word32 hashlen, int* res, ecc_key* key);
 #endif /* HAVE_ECC_VERIFY */
 
 WOLFSSL_API
 int wc_ecc_init(ecc_key* key);
 WOLFSSL_ABI WOLFSSL_API
 int wc_ecc_init_ex(ecc_key* key, void* heap, int devId);
-#ifdef WOLF_CRYPTO_CB
+#ifdef WOLF_PRIVATE_KEY_ID
 WOLFSSL_API
 int wc_ecc_init_id(ecc_key* key, unsigned char* id, int len, void* heap,
                    int devId);
@@ -717,9 +723,10 @@ int wc_ecc_mulmod_ex2(const mp_int* k, ecc_point *G, ecc_point *R, mp_int* a,
 #ifdef HAVE_ECC_KEY_EXPORT
 /* ASN key helpers */
 WOLFSSL_API
-int wc_ecc_export_x963(ecc_key*, byte* out, word32* outLen);
+int wc_ecc_export_x963(ecc_key* key, byte* out, word32* outLen);
 WOLFSSL_API
-int wc_ecc_export_x963_ex(ecc_key*, byte* out, word32* outLen, int compressed);
+int wc_ecc_export_x963_ex(ecc_key* key, byte* out, word32* outLen,
+                          int compressed);
     /* extended functionality with compressed option */
 #endif /* HAVE_ECC_KEY_EXPORT */
 
@@ -813,7 +820,9 @@ int wc_ecc_get_oid(word32 oidSum, const byte** oid, word32* oidSz);
 
 enum ecEncAlgo {
     ecAES_128_CBC = 1,  /* default */
-    ecAES_256_CBC = 2
+    ecAES_256_CBC = 2,
+    ecAES_128_CTR = 3,
+    ecAES_256_CTR = 4
 };
 
 enum ecKdfAlgo {
@@ -849,23 +858,29 @@ ecEncCtx* wc_ecc_ctx_new(int flags, WC_RNG* rng);
 WOLFSSL_API
 ecEncCtx* wc_ecc_ctx_new_ex(int flags, WC_RNG* rng, void* heap);
 WOLFSSL_API
-void wc_ecc_ctx_free(ecEncCtx*);
+void wc_ecc_ctx_free(ecEncCtx* ctx);
 WOLFSSL_API
-int wc_ecc_ctx_reset(ecEncCtx*, WC_RNG*);  /* reset for use again w/o alloc/free */
+int wc_ecc_ctx_reset(ecEncCtx* ctx, WC_RNG* rng);  /* reset for use again w/o alloc/free */
 
 WOLFSSL_API
-const byte* wc_ecc_ctx_get_own_salt(ecEncCtx*);
+int wc_ecc_ctx_set_algo(ecEncCtx* ctx, byte encAlgo, byte kdfAlgo,
+    byte macAlgo);
 WOLFSSL_API
-int wc_ecc_ctx_set_peer_salt(ecEncCtx*, const byte* salt);
+const byte* wc_ecc_ctx_get_own_salt(ecEncCtx* ctx);
 WOLFSSL_API
-int wc_ecc_ctx_set_info(ecEncCtx*, const byte* info, int sz);
+int wc_ecc_ctx_set_peer_salt(ecEncCtx* ctx, const byte* salt);
+WOLFSSL_API
+int wc_ecc_ctx_set_info(ecEncCtx* ctx, const byte* info, int sz);
 
 WOLFSSL_API
 int wc_ecc_encrypt(ecc_key* privKey, ecc_key* pubKey, const byte* msg,
-                word32 msgSz, byte* out, word32* outSz, ecEncCtx* ctx);
+    word32 msgSz, byte* out, word32* outSz, ecEncCtx* ctx);
+WOLFSSL_API
+int wc_ecc_encrypt_ex(ecc_key* privKey, ecc_key* pubKey, const byte* msg,
+    word32 msgSz, byte* out, word32* outSz, ecEncCtx* ctx, int compressed);
 WOLFSSL_API
 int wc_ecc_decrypt(ecc_key* privKey, ecc_key* pubKey, const byte* msg,
-                word32 msgSz, byte* out, word32* outSz, ecEncCtx* ctx);
+    word32 msgSz, byte* out, word32* outSz, ecEncCtx* ctx);
 
 #endif /* HAVE_ECC_ENCRYPT */
 

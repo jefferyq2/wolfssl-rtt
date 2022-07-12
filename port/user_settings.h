@@ -21,13 +21,16 @@
 #define WOLFSSL_AES_DIRECT
 #define WC_NO_HARDEN
 #define WOLFSSL_IGNORE_FILE_WARN
+#define USE_INTEGER_HEAP_MATH
 
-//#define DEBUG_WOLFSSL
+// #define DEBUG_WOLFSSL
 // #define NO_WOLFSSL_SERVER
 #define NO_OLD_TLS
 // #define NO_DSA
 // #define NO_ERROR_STRINGS
 #define NO_MULTIBYTE_PRINT
+// #define NO_CLIENT_CACHE
+#define NO_SESSION_CACHE
 
 /* adjust CURRENT_UNIX_TS to seconds since Jan 01 1970. (UTC)
 You can get the current time from https://www.unixtimestamp.com/

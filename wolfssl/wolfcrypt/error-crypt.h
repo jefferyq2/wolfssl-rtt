@@ -24,7 +24,7 @@
 */
 /*
 DESCRIPTION
-This library defines error codes and contians routines for setting and examining
+This library defines error codes and contains routines for setting and examining
 the error status.
 */
 
@@ -35,7 +35,7 @@ the error status.
 
 #if defined(HAVE_FIPS) && \
     (!defined(HAVE_FIPS_VERSION) || (HAVE_FIPS_VERSION < 2))
-	#include <cyassl/ctaocrypt/error-crypt.h>
+    #include <cyassl/ctaocrypt/error-crypt.h>
 #endif /* HAVE_FIPS V1 */
 
 #ifdef __cplusplus
@@ -246,8 +246,11 @@ enum {
     DHE_PCT_E           = -285,  /* DHE Pairwise Consistency Test failure */
     ECC_PCT_E           = -286,  /* ECDHE Pairwise Consistency Test failure */
     FIPS_PRIVATE_KEY_LOCKED_E = -287, /* Cannot export private key. */
+    PROTOCOLCB_UNAVAILABLE  = -288, /* Protocol callback unavailable */
+    AES_SIV_AUTH_E = -289, /* AES-SIV authentication failed */
+    NO_VALID_DEVID = -290, /* no valid device ID */
 
-    WC_LAST_E           = -287,  /* Update this to indicate last error */
+    WC_LAST_E           = -290,  /* Update this to indicate last error */
     MIN_CODE_E          = -300   /* errors -101 - -299 */
 
     /* add new companion error id strings for any new error codes

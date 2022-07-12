@@ -143,9 +143,9 @@ static void FreeCRL_Entry(CRL_Entry* crle, void* heap)
         tmp = next;
     }
     if (crle->signature != NULL)
-        XFREE(crle->signature, heap, DYNAMIC_TYPE_REVOKED);
+        XFREE(crle->signature, heap, DYNAMIC_TYPE_CRL_ENTRY);
     if (crle->toBeSigned != NULL)
-        XFREE(crle->toBeSigned, heap, DYNAMIC_TYPE_REVOKED);
+        XFREE(crle->toBeSigned, heap, DYNAMIC_TYPE_CRL_ENTRY);
 
     (void)heap;
 }
@@ -381,7 +381,7 @@ int CheckCertCRL(WOLFSSL_CRL* crl, DecodedCert* cert)
     /* When not set the folder or not use hash_dir, do nothing.             */
     if ((foundEntry == 0) && (ret != OCSP_WANT_READ)) {
         if (crl->cm->x509_store_p != NULL) {
-            ret = LoadCertByIssuer(crl->cm->x509_store_p, 
+            ret = LoadCertByIssuer(crl->cm->x509_store_p,
                           (WOLFSSL_X509_NAME*)cert->issuerName, X509_LU_CRL);
             if (ret == WOLFSSL_SUCCESS) {
                 /* try again */
@@ -497,7 +497,7 @@ int BufferLoadCRL(WOLFSSL_CRL* crl, const byte* buff, long sz, int type,
 #endif
 
     InitDecodedCRL(dcrl, crl->heap);
-    ret = ParseCRL(dcrl, myBuffer, (word32)sz, crl->cm);
+    ret = ParseCRL(dcrl, myBuffer, (word32)sz, verify, crl->cm);
     if (ret != 0 && !(ret == ASN_CRL_NO_SIGNER_E && verify == NO_VERIFY)) {
         WOLFSSL_MSG("ParseCRL error");
     }
@@ -1350,10 +1350,10 @@ int LoadCRL(WOLFSSL_CRL* crl, const char* path, int type, int monitor)
 #else
 int LoadCRL(WOLFSSL_CRL* crl, const char* path, int type, int monitor)
 {
-	(void)crl;
-	(void)path;
-	(void)type;
-	(void)monitor;
+    (void)crl;
+    (void)path;
+    (void)type;
+    (void)monitor;
 
     /* stub for scenario where file system is not supported */
     return NOT_COMPILED_IN;

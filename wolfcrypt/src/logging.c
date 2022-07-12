@@ -357,6 +357,8 @@ static void wolfssl_log(const int logLevel, const char *const logMessage)
         xil_printf("%s\r\n", logMessage);
 #elif defined(WOLFSSL_LINUXKM)
         printk("%s\n", logMessage);
+#elif defined(WOLFSSL_RENESAS_RA6M4)
+        myprintf("%s\n", logMessage);
 #else
         fprintf(stderr, "%s\n", logMessage);
 #endif
@@ -364,6 +366,31 @@ static void wolfssl_log(const int logLevel, const char *const logMessage)
 }
 
 #ifndef WOLFSSL_DEBUG_ERRORS_ONLY
+
+#if !defined(_WIN32) && defined(XVSNPRINTF) && !defined(NO_WOLFSSL_MSG_EX)
+#include <stdarg.h> /* for var args */
+#ifndef WOLFSSL_MSG_EX_BUF_SZ
+#define WOLFSSL_MSG_EX_BUF_SZ 100
+#endif
+#ifdef __clang__
+/* tell clang argument 1 is format */
+__attribute__((__format__ (__printf__, 1, 0)))
+#endif
+void WOLFSSL_MSG_EX(const char* fmt, ...)
+{
+    if (loggingEnabled) {
+        char msg[WOLFSSL_MSG_EX_BUF_SZ];
+        int written;
+        va_list args;
+        va_start(args, fmt);
+        written = XVSNPRINTF(msg, sizeof(msg), fmt, args);
+        va_end(args);
+        if (written > 0)
+            wolfssl_log(INFO_LOG , msg);
+    }
+}
+#endif
+
 void WOLFSSL_MSG(const char* msg)
 {
     if (loggingEnabled)
@@ -456,8 +483,7 @@ WOLFSSL_API int WOLFSSL_IS_DEBUG_ON(void)
     defined(WOLFSSL_NGINX) || defined(WOLFSSL_HAPROXY) || \
     defined(OPENSSL_EXTRA)
 
-#if (defined(OPENSSL_EXTRA) && !defined(_WIN32) && !defined(NO_ERROR_QUEUE)) \
-    || defined(DEBUG_WOLFSSL_VERBOSE)
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
 void WOLFSSL_ERROR_LINE(int error, const char* func, unsigned int line,
         const char* file, void* usrCtx)
 #else
@@ -470,8 +496,7 @@ void WOLFSSL_ERROR(int error)
     {
         char buffer[WOLFSSL_MAX_ERROR_SZ];
 
-    #if (defined(OPENSSL_EXTRA) && !defined(_WIN32) && \
-            !defined(NO_ERROR_QUEUE)) || defined(DEBUG_WOLFSSL_VERBOSE)
+    #ifdef WOLFSSL_HAVE_ERROR_QUEUE
         (void)usrCtx; /* a user ctx for future flexibility */
         (void)func;
 
@@ -489,7 +514,7 @@ void WOLFSSL_ERROR(int error)
             if (error < 0)
                 error = error - (2 * error); /* get absolute value */
             XSNPRINTF(buffer, sizeof(buffer),
-                    "wolfSSL error occurred, error = %d line:%d file:%s",
+                    "wolfSSL error occurred, error = %d line:%u file:%s",
                     error, line, file);
 
             if (wc_AddErrorNode(error, line, buffer, (char*)file) != 0) {
@@ -577,6 +602,7 @@ int wc_LoggingCleanup(void)
 int wc_PeekErrorNode(int idx, const char **file, const char **reason,
         int *line)
 {
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
     struct wc_error_queue* err;
 
     if (wc_LockMutex(&debug_mutex) != 0) {
@@ -622,6 +648,14 @@ int wc_PeekErrorNode(int idx, const char **file, const char **reason,
     wc_UnLockMutex(&debug_mutex);
 
     return err->value;
+#else
+    (void)idx;
+    (void)file;
+    (void)reason;
+    (void)line;
+    WOLFSSL_MSG("Error queue turned off, can not peak nodes");
+    return NOT_COMPILED_IN;
+#endif
 }
 
 
@@ -637,6 +671,7 @@ int wc_PeekErrorNode(int idx, const char **file, const char **reason,
  */
 int wc_PullErrorNode(const char **file, const char **reason, int *line)
 {
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
     struct wc_error_queue* err;
     int value;
 
@@ -669,6 +704,13 @@ int wc_PullErrorNode(const char **file, const char **reason, int *line)
     wc_UnLockMutex(&debug_mutex);
 
     return value;
+#else
+    (void)file;
+    (void)reason;
+    (void)line;
+    WOLFSSL_MSG("Error queue turned off, can not pull nodes");
+    return NOT_COMPILED_IN;
+#endif
 }
 
 
@@ -677,13 +719,7 @@ int wc_PullErrorNode(const char **file, const char **reason, int *line)
  * function. debug_mutex should be locked before a call to this function. */
 int wc_AddErrorNode(int error, int line, char* buf, char* file)
 {
-#if defined(NO_ERROR_QUEUE)
-    (void)error;
-    (void)line;
-    (void)buf;
-    (void)file;
-    WOLFSSL_MSG("Error queue turned off, can not add nodes");
-#else
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
     struct wc_error_queue* err;
 
     if (wc_error_queue_count >= ERROR_QUEUE_MAX) {
@@ -731,7 +767,7 @@ int wc_AddErrorNode(int error, int line, char* buf, char* file)
             /* case of first node added to queue */
             if (wc_errors != NULL) {
                 /* check for unexpected case before over writing wc_errors */
-                WOLFSSL_MSG("ERROR in adding new node to logging queue!!\n");
+                WOLFSSL_MSG("ERROR in adding new node to logging queue!!");
                 /* In the event both wc_last_node and wc_errors are NULL, err
                  * goes unassigned to external wc_errors, wc_last_node. Free
                  * err in this instance since wc_ClearErrorNodes will not
@@ -757,8 +793,15 @@ int wc_AddErrorNode(int error, int line, char* buf, char* file)
         }
         wc_error_queue_count++;
     }
-#endif
     return 0;
+#else
+    (void)error;
+    (void)line;
+    (void)buf;
+    (void)file;
+    WOLFSSL_MSG("Error queue turned off, can not add nodes");
+    return NOT_COMPILED_IN;
+#endif
 }
 
 /* Removes the error node at the specified index.
@@ -767,6 +810,7 @@ int wc_AddErrorNode(int error, int line, char* buf, char* file)
  */
 void wc_RemoveErrorNode(int idx)
 {
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
     struct wc_error_queue* current;
 
     if (wc_LockMutex(&debug_mutex) != 0) {
@@ -797,6 +841,10 @@ void wc_RemoveErrorNode(int idx)
     }
 
     wc_UnLockMutex(&debug_mutex);
+#else
+    (void)idx;
+    WOLFSSL_MSG("Error queue turned off, can not remove nodes");
+#endif
 }
 
 
@@ -804,9 +852,7 @@ void wc_RemoveErrorNode(int idx)
  */
 void wc_ClearErrorNodes(void)
 {
-#if defined(DEBUG_WOLFSSL) || defined(WOLFSSL_NGINX) || \
-    defined(OPENSSL_EXTRA) || defined(DEBUG_WOLFSSL_VERBOSE)
-
+#ifdef WOLFSSL_HAVE_ERROR_QUEUE
     if (wc_LockMutex(&debug_mutex) != 0) {
         WOLFSSL_MSG("Lock debug mutex failed");
         return;
@@ -830,7 +876,9 @@ void wc_ClearErrorNodes(void)
     wc_last_node    = NULL;
     wc_current_node = NULL;
     wc_UnLockMutex(&debug_mutex);
-#endif /* DEBUG_WOLFSSL || WOLFSSL_NGINX */
+#else
+    WOLFSSL_MSG("Error queue turned off, can not clear nodes");
+#endif
 }
 
 int wc_SetLoggingHeap(void* h)

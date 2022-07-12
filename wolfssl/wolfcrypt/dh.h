@@ -91,6 +91,11 @@ enum {
     WC_FFDHE_8192 = 260,
 };
 
+/* DH Private Key size up to 8192 bit */
+#ifndef WC_DH_PRIV_MAX_SZ
+#define WC_DH_PRIV_MAX_SZ 52
+#endif
+
 #ifdef HAVE_PUBLIC_FFDHE
 #ifdef HAVE_FFDHE_2048
 WOLFSSL_API const DhParams* wc_Dh_ffdhe2048_Get(void);
@@ -120,7 +125,7 @@ WOLFSSL_API int wc_DhAgree(DhKey* key, byte* agree, word32* agreeSz,
                        word32 pubSz);
 
 WOLFSSL_API int wc_DhKeyDecode(const byte* input, word32* inOutIdx, DhKey* key,
-                           word32); /* wc_DhKeyDecode is in asn.c */
+                           word32 inSz); /* wc_DhKeyDecode is in asn.c */
 
 WOLFSSL_API int wc_DhSetKey(DhKey* key, const byte* p, word32 pSz, const byte* g,
                         word32 gSz);

@@ -44,10 +44,10 @@ decouple library dependencies with standard string, memory and so on.
 
     /*
      * This struct is used multiple time by other structs and
-     * needs to be defined somwhere that all structs can import
-     * (with minimal depencencies).
+     * needs to be defined somewhere that all structs can import
+     * (with minimal dependencies).
      */
-    #if defined(HAVE_EX_DATA) || defined(FORTRESS)
+    #ifdef HAVE_EX_DATA
         #ifdef HAVE_EX_DATA_CLEANUP_HOOKS
         typedef void (*wolfSSL_ex_data_cleanup_routine_t)(void *data);
         #endif
@@ -208,15 +208,23 @@ decouple library dependencies with standard string, memory and so on.
 #elif defined(WC_16BIT_CPU)
         #undef WORD64_AVAILABLE
         typedef word16 wolfssl_word;
-        #define MP_16BIT  /* for mp_int, mp_word needs to be twice as big as
-                             mp_digit, no 64 bit type so make mp_digit 16 bit */
+        #define MP_16BIT  /* for mp_int, mp_word needs to be twice as big as \
+                           * mp_digit, no 64 bit type so make mp_digit 16 bit */
 
 #else
         #undef WORD64_AVAILABLE
         typedef word32 wolfssl_word;
-        #define MP_16BIT  /* for mp_int, mp_word needs to be twice as big as
-                             mp_digit, no 64 bit type so make mp_digit 16 bit */
+        #define MP_16BIT  /* for mp_int, mp_word needs to be twice as big as \
+                           * mp_digit, no 64 bit type so make mp_digit 16 bit */
 #endif
+
+typedef struct w64wrapper {
+#if defined(WORD64_AVAILABLE) && !defined(WOLFSSL_W64_WRAPPER_TEST)
+    word64 n;
+#else
+    word32 n[2];
+#endif /* WORD64_AVAILABLE && WOLFSSL_W64_WRAPPER_TEST */
+} w64wrapper;
 
 #ifdef WC_PTR_TYPE /* Allow user suppied type */
     typedef WC_PTR_TYPE wc_ptr_t;
@@ -259,6 +267,12 @@ decouple library dependencies with standard string, memory and so on.
             #endif
         #elif defined(__CCRX__)
             #define WC_INLINE inline
+        #elif defined(__DCC__)
+            #ifndef __cplusplus
+                #define WC_INLINE __inline__
+            #else
+                #define WC_INLINE inline
+            #endif
         #else
             #define WC_INLINE
         #endif
@@ -311,12 +325,13 @@ decouple library dependencies with standard string, memory and so on.
     #ifndef FALL_THROUGH
         /* GCC 7 has new switch() fall-through detection */
         #if defined(__GNUC__)
-            #if ((__GNUC__ > 7) || ((__GNUC__ == 7) && (__GNUC_MINOR__ >= 1)))
-                #if defined(WOLFSSL_LINUXKM) && defined(fallthrough)
-                    #define FALL_THROUGH fallthrough
-                #else
-                    #define FALL_THROUGH ; __attribute__ ((fallthrough))
-                #endif
+            #if defined(fallthrough)
+                #define FALL_THROUGH fallthrough
+            #elif ((__GNUC__ > 7) || ((__GNUC__ == 7) && (__GNUC_MINOR__ >= 1)))
+                #define FALL_THROUGH ; __attribute__ ((fallthrough))
+            #elif defined(__clang__) && defined(__clang_major__) && \
+                    (__clang_major__ >= 12)
+                #define FALL_THROUGH ; __attribute__ ((fallthrough))
             #endif
         #endif
     #endif /* FALL_THROUGH */
@@ -414,7 +429,11 @@ decouple library dependencies with standard string, memory and so on.
         /* Telit M2MB SDK requires use m2mb_os API's, not std malloc/free */
         /* Use of malloc/free will cause CPU reboot */
         #define XMALLOC(s, h, t)     ((void)h, (void)t, m2mb_os_malloc((s)))
-        #define XFREE(p, h, t)       {void* xp = (p); if((xp)) m2mb_os_free((xp));}
+        #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+            #define XFREE(p, h, t)       m2mb_os_free(xp)
+        #else
+            #define XFREE(p, h, t)       {void* xp = (p); if (xp) m2mb_os_free(xp);}
+        #endif
         #define XREALLOC(p, n, h, t) m2mb_os_realloc((p), (n))
 
     #elif defined(NO_WOLFSSL_MEMORY)
@@ -423,7 +442,7 @@ decouple library dependencies with standard string, memory and so on.
             #ifdef WOLFSSL_MALLOC_CHECK
                 #include <stdio.h>
                 static inline void* malloc_check(size_t sz) {
-                    printf("wolfSSL_malloc failed");
+                    fprintf(stderr, "wolfSSL_malloc failed");
                     return NULL;
                 };
                 #define XMALLOC(s, h, t)     malloc_check((s))
@@ -438,15 +457,17 @@ decouple library dependencies with standard string, memory and so on.
         /* just use plain C stdlib stuff if desired */
         #include <stdlib.h>
         #define XMALLOC(s, h, t)     malloc((size_t)(s))
-        #define XFREE(p, h, t)       {void* xp = (p); if((xp)) free((xp));}
+        #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+            #define XFREE(p, h, t)       free(xp)
+        #else
+            #define XFREE(p, h, t)       {void* xp = (p); if (xp) free(xp);}
+        #endif
         #define XREALLOC(p, n, h, t) realloc((p), (size_t)(n))
         #endif
 
     #elif defined(WOLFSSL_LINUXKM)
-        /* the requisite linux/slab.h is included in wc_port.h, with incompatible warnings masked out. */
-        #define XMALLOC(s, h, t)     ({(void)(h); (void)(t); kmalloc(s, GFP_KERNEL);})
-        #define XFREE(p, h, t)       ({void* _xp; (void)(h); _xp = (p); if(_xp) kfree(_xp);})
-        #define XREALLOC(p, n, h, t) ({(void)(h); (void)(t); krealloc((p), (n), GFP_KERNEL);})
+
+        /* definitions are in linuxkm/linuxkm_wc_port.h */
 
     #elif !defined(MICRIUM_MALLOC) && !defined(EBSNET) \
             && !defined(WOLFSSL_SAFERTOS) && !defined(FREESCALE_MQX) \
@@ -459,21 +480,37 @@ decouple library dependencies with standard string, memory and so on.
         #ifdef WOLFSSL_STATIC_MEMORY
             #ifdef WOLFSSL_DEBUG_MEMORY
                 #define XMALLOC(s, h, t)     wolfSSL_Malloc((s), (h), (t), __func__, __LINE__)
-                #define XFREE(p, h, t)       {void* xp = (p); if((xp)) wolfSSL_Free((xp), (h), (t), __func__, __LINE__);}
+                #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+                    #define XFREE(p, h, t)       wolfSSL_Free(xp, h, t, __func__, __LINE__)
+                #else
+                    #define XFREE(p, h, t)       {void* xp = (p); if (xp) wolfSSL_Free(xp, h, t, __func__, __LINE__);}
+                #endif
                 #define XREALLOC(p, n, h, t) wolfSSL_Realloc((p), (n), (h), (t), __func__, __LINE__)
             #else
                 #define XMALLOC(s, h, t)     wolfSSL_Malloc((s), (h), (t))
-                #define XFREE(p, h, t)       {void* xp = (p); if((xp)) wolfSSL_Free((xp), (h), (t));}
+                #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+                    #define XFREE(p, h, t)       wolfSSL_Free(xp, h, t)
+                #else
+                    #define XFREE(p, h, t)       {void* xp = (p); if (xp) wolfSSL_Free(xp, h, t);}
+                #endif
                 #define XREALLOC(p, n, h, t) wolfSSL_Realloc((p), (n), (h), (t))
             #endif /* WOLFSSL_DEBUG_MEMORY */
-        #elif !defined(FREERTOS) && !defined(FREERTOS_TCP)
+        #elif (!defined(FREERTOS) && !defined(FREERTOS_TCP)) || defined(WOLFSSL_TRACK_MEMORY)
             #ifdef WOLFSSL_DEBUG_MEMORY
                 #define XMALLOC(s, h, t)     ((void)(h), (void)(t), wolfSSL_Malloc((s), __func__, __LINE__))
-                #define XFREE(p, h, t)       {void* xp = (p); if((xp)) wolfSSL_Free((xp), __func__, __LINE__);}
+                #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+                    #define XFREE(p, h, t)       wolfSSL_Free(xp, __func__, __LINE__)
+                #else
+                    #define XFREE(p, h, t)       {void* xp = (p); if (xp) wolfSSL_Free(xp, __func__, __LINE__);}
+                #endif
                 #define XREALLOC(p, n, h, t) wolfSSL_Realloc((p), (n), __func__, __LINE__)
             #else
                 #define XMALLOC(s, h, t)     ((void)(h), (void)(t), wolfSSL_Malloc((s)))
-                #define XFREE(p, h, t)       {void* xp = (p); if((xp)) wolfSSL_Free((xp));}
+                #ifdef WOLFSSL_XFREE_NO_NULLNESS_CHECK
+                    #define XFREE(p, h, t)       wolfSSL_Free(p)
+                #else
+                    #define XFREE(p, h, t)       {void* xp = (p); if (xp) wolfSSL_Free(xp);}
+                #endif
                 #define XREALLOC(p, n, h, t) wolfSSL_Realloc((p), (n))
             #endif /* WOLFSSL_DEBUG_MEMORY */
         #endif /* WOLFSSL_STATIC_MEMORY */
@@ -481,68 +518,82 @@ decouple library dependencies with standard string, memory and so on.
 
     /* declare/free variable handling for async and smallstack */
     #if defined(WOLFSSL_ASYNC_CRYPT) || defined(WOLFSSL_SMALL_STACK)
-        #define DECLARE_VAR_IS_HEAP_ALLOC
-        #define DECLARE_VAR(VAR_NAME, VAR_TYPE, VAR_SIZE, HEAP) \
-            VAR_TYPE* VAR_NAME = (VAR_TYPE*)XMALLOC(sizeof(VAR_TYPE) * VAR_SIZE, (HEAP), DYNAMIC_TYPE_WOLF_BIGINT)
-        #define DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+        #define WC_DECLARE_VAR_IS_HEAP_ALLOC
+        #define WC_DECLARE_VAR(VAR_NAME, VAR_TYPE, VAR_SIZE, HEAP) \
+            VAR_TYPE* VAR_NAME = (VAR_TYPE*)XMALLOC(sizeof(VAR_TYPE) * (VAR_SIZE), (HEAP), DYNAMIC_TYPE_WOLF_BIGINT)
+        #define WC_DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
             VAR_TYPE* VAR_NAME[VAR_ITEMS]; \
-            int idx##VAR_NAME, inner_idx_##VAR_NAME; \
-            for (idx##VAR_NAME=0; idx##VAR_NAME<VAR_ITEMS; idx##VAR_NAME++) { \
-                VAR_NAME[idx##VAR_NAME] = (VAR_TYPE*)XMALLOC(VAR_SIZE, (HEAP), DYNAMIC_TYPE_WOLF_BIGINT); \
-                if (VAR_NAME[idx##VAR_NAME] == NULL) { \
+            int idx##VAR_NAME, inner_idx_##VAR_NAME
+        #define WC_INIT_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+            for (idx##VAR_NAME=0; idx##VAR_NAME<(VAR_ITEMS); idx##VAR_NAME++) { \
+                (VAR_NAME)[idx##VAR_NAME] = (VAR_TYPE*)XMALLOC(VAR_SIZE, (HEAP), DYNAMIC_TYPE_WOLF_BIGINT); \
+                if ((VAR_NAME)[idx##VAR_NAME] == NULL) { \
                     for (inner_idx_##VAR_NAME = 0; inner_idx_##VAR_NAME < idx##VAR_NAME; inner_idx_##VAR_NAME++) { \
-                        XFREE(VAR_NAME[inner_idx_##VAR_NAME], HEAP, DYNAMIC_TYPE_WOLF_BIGINT); \
-                        VAR_NAME[inner_idx_##VAR_NAME] = NULL; \
+                        XFREE((VAR_NAME)[inner_idx_##VAR_NAME], (HEAP), DYNAMIC_TYPE_WOLF_BIGINT); \
+                        (VAR_NAME)[inner_idx_##VAR_NAME] = NULL; \
                     } \
-                    for (inner_idx_##VAR_NAME = idx##VAR_NAME + 1; inner_idx_##VAR_NAME < VAR_ITEMS; inner_idx_##VAR_NAME++) { \
-                        VAR_NAME[inner_idx_##VAR_NAME] = NULL; \
+                    for (inner_idx_##VAR_NAME = idx##VAR_NAME + 1; inner_idx_##VAR_NAME < (VAR_ITEMS); inner_idx_##VAR_NAME++) { \
+                        (VAR_NAME)[inner_idx_##VAR_NAME] = NULL; \
                     } \
                     break; \
                 } \
             }
-        #define FREE_VAR(VAR_NAME, HEAP) \
+        #define WC_FREE_VAR(VAR_NAME, HEAP) \
             XFREE(VAR_NAME, (HEAP), DYNAMIC_TYPE_WOLF_BIGINT)
-        #define FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP) \
-            for (idx##VAR_NAME=0; idx##VAR_NAME<VAR_ITEMS; idx##VAR_NAME++) { \
-                XFREE(VAR_NAME[idx##VAR_NAME], (HEAP), DYNAMIC_TYPE_WOLF_BIGINT); \
+        #define WC_FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP) \
+            for (idx##VAR_NAME=0; idx##VAR_NAME<(VAR_ITEMS); idx##VAR_NAME++) { \
+                XFREE((VAR_NAME)[idx##VAR_NAME], (HEAP), DYNAMIC_TYPE_WOLF_BIGINT); \
             }
 
-        #define DECLARE_ARRAY_DYNAMIC_DEC(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
-            DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP)
-        #define DECLARE_ARRAY_DYNAMIC_EXE(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP)
-        #define FREE_ARRAY_DYNAMIC(VAR_NAME, VAR_ITEMS, HEAP) \
-            FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP)
+        #define WC_DECLARE_ARRAY_DYNAMIC_DEC(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+            WC_DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP)
+        #define WC_DECLARE_ARRAY_DYNAMIC_EXE(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+            WC_INIT_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP)
+        #define WC_FREE_ARRAY_DYNAMIC(VAR_NAME, VAR_ITEMS, HEAP) \
+            WC_FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP)
     #else
-        #undef DECLARE_VAR_IS_HEAP_ALLOC
-        #define DECLARE_VAR(VAR_NAME, VAR_TYPE, VAR_SIZE, HEAP) \
+        #undef WC_DECLARE_VAR_IS_HEAP_ALLOC
+        #define WC_DECLARE_VAR(VAR_NAME, VAR_TYPE, VAR_SIZE, HEAP) \
             VAR_TYPE VAR_NAME[VAR_SIZE]
-        #define DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+        #define WC_DECLARE_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
             VAR_TYPE VAR_NAME[VAR_ITEMS][VAR_SIZE]
-        #define FREE_VAR(VAR_NAME, HEAP) /* nothing to free, its stack */
-        #define FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP)  /* nothing to free, its stack */
+        #define WC_INIT_ARRAY(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) do {} while(0)
+        #define WC_FREE_VAR(VAR_NAME, HEAP) /* nothing to free, its stack */
+        #define WC_FREE_ARRAY(VAR_NAME, VAR_ITEMS, HEAP)  /* nothing to free, its stack */
 
-        #define DECLARE_ARRAY_DYNAMIC_DEC(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+        #define WC_DECLARE_ARRAY_DYNAMIC_DEC(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
             VAR_TYPE* VAR_NAME[VAR_ITEMS]; \
-            int idx##VAR_NAME, inner_idx_##VAR_NAME;
-        #define DECLARE_ARRAY_DYNAMIC_EXE(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
-            for (idx##VAR_NAME=0; idx##VAR_NAME<VAR_ITEMS; idx##VAR_NAME++) { \
-                VAR_NAME[idx##VAR_NAME] = (VAR_TYPE*)XMALLOC(VAR_SIZE, (HEAP), DYNAMIC_TYPE_TMP_BUFFER); \
-                if (VAR_NAME[idx##VAR_NAME] == NULL) { \
+            int idx##VAR_NAME, inner_idx_##VAR_NAME
+        #define WC_DECLARE_ARRAY_DYNAMIC_EXE(VAR_NAME, VAR_TYPE, VAR_ITEMS, VAR_SIZE, HEAP) \
+            for (idx##VAR_NAME=0; idx##VAR_NAME<(VAR_ITEMS); idx##VAR_NAME++) { \
+                (VAR_NAME)[idx##VAR_NAME] = (VAR_TYPE*)XMALLOC(VAR_SIZE, (HEAP), DYNAMIC_TYPE_TMP_BUFFER); \
+                if ((VAR_NAME)[idx##VAR_NAME] == NULL) { \
                     for (inner_idx_##VAR_NAME = 0; inner_idx_##VAR_NAME < idx##VAR_NAME; inner_idx_##VAR_NAME++) { \
-                        XFREE(VAR_NAME[inner_idx_##VAR_NAME], HEAP, DYNAMIC_TYPE_TMP_BUFFER); \
-                        VAR_NAME[inner_idx_##VAR_NAME] = NULL; \
+                        XFREE((VAR_NAME)[inner_idx_##VAR_NAME], HEAP, DYNAMIC_TYPE_TMP_BUFFER); \
+                        (VAR_NAME)[inner_idx_##VAR_NAME] = NULL; \
                     } \
-                    for (inner_idx_##VAR_NAME = idx##VAR_NAME + 1; inner_idx_##VAR_NAME < VAR_ITEMS; inner_idx_##VAR_NAME++) { \
-                        VAR_NAME[inner_idx_##VAR_NAME] = NULL; \
+                    for (inner_idx_##VAR_NAME = idx##VAR_NAME + 1; inner_idx_##VAR_NAME < (VAR_ITEMS); inner_idx_##VAR_NAME++) { \
+                        (VAR_NAME)[inner_idx_##VAR_NAME] = NULL; \
                     } \
                     break; \
                 } \
             }
-        #define FREE_ARRAY_DYNAMIC(VAR_NAME, VAR_ITEMS, HEAP) \
-            for (idx##VAR_NAME=0; idx##VAR_NAME<VAR_ITEMS; idx##VAR_NAME++) { \
-                XFREE(VAR_NAME[idx##VAR_NAME], (HEAP), DYNAMIC_TYPE_TMP_BUFFER); \
+        #define WC_FREE_ARRAY_DYNAMIC(VAR_NAME, VAR_ITEMS, HEAP) \
+            for (idx##VAR_NAME=0; idx##VAR_NAME<(VAR_ITEMS); idx##VAR_NAME++) { \
+                XFREE((VAR_NAME)[idx##VAR_NAME], (HEAP), DYNAMIC_TYPE_TMP_BUFFER); \
             }
     #endif
+
+    #if defined(HAVE_FIPS) || defined(HAVE_SELFTEST)
+        /* These are here for the FIPS code that can't be changed. New definitions don't need to be added here. */
+        #define DECLARE_VAR                 WC_DECLARE_VAR
+        #define DECLARE_ARRAY               WC_DECLARE_ARRAY
+        #define FREE_VAR                    WC_FREE_VAR
+        #define FREE_ARRAY                  WC_FREE_ARRAY
+        #define DECLARE_ARRAY_DYNAMIC_DEC   WC_DECLARE_ARRAY_DYNAMIC_DEC
+        #define DECLARE_ARRAY_DYNAMIC_EXE   WC_DECLARE_ARRAY_DYNAMIC_EXE
+        #define FREE_ARRAY_DYNAMIC          WC_FREE_ARRAY_DYNAMIC
+    #endif /* HAVE_FIPS */
 
     #if !defined(USE_WOLF_STRTOK) && \
             ((defined(__MINGW32__) && !defined(__MINGW64_VERSION_MAJOR)) || \
@@ -551,6 +602,12 @@ decouple library dependencies with standard string, memory and so on.
     #endif
     #if !defined(USE_WOLF_STRSEP) && (defined(WOLF_C99))
         #define USE_WOLF_STRSEP
+    #endif
+    #if !defined(XSTRLCPY) && !defined(USE_WOLF_STRLCPY)
+        #define USE_WOLF_STRLCPY
+    #endif
+    #if !defined(XSTRLCAT) && !defined(USE_WOLF_STRLCAT)
+        #define USE_WOLF_STRLCAT
     #endif
 
         #ifndef STRING_USER
@@ -581,10 +638,44 @@ decouple library dependencies with standard string, memory and so on.
             #define XSTRSEP(s1,d) strsep((s1),(d))
         #endif
 
-        #ifndef XSTRNCASECMP
-        #if defined(MICROCHIP_PIC32) || defined(WOLFSSL_TIRTOS) || \
+        #ifndef XSTRCASECMP
+        #if defined(MICROCHIP_PIC32) && (__XC32_VERSION >= 1000)
+            /* XC32 supports str[n]casecmp in version >= 1.0. */
+            #define XSTRCASECMP(s1,s2) strcasecmp((s1),(s2))
+        #elif defined(MICROCHIP_PIC32) || defined(WOLFSSL_TIRTOS) || \
                 defined(WOLFSSL_ZEPHYR)
-            /* XC32 does not support strncasecmp, so use case sensitive one */
+            /* XC32 version < 1.0 does not support strcasecmp, so use
+             * case sensitive one.
+             */
+            #define XSTRCASECMP(s1,s2) strcmp((s1),(s2))
+        #elif defined(USE_WINDOWS_API) || defined(FREERTOS_TCP_WINSIM)
+            #define XSTRCASECMP(s1,s2) _stricmp((s1),(s2))
+        #else
+            #if defined(HAVE_STRINGS_H) && defined(WOLF_C99) && \
+                !defined(WOLFSSL_SGX)
+                #include <strings.h>
+            #endif
+            #if defined(WOLFSSL_DEOS)
+                #define XSTRCASECMP(s1,s2) stricmp((s1),(s2))
+            #elif defined(WOLFSSL_CMSIS_RTOSv2) || defined(WOLFSSL_AZSPHERE)
+                #define XSTRCASECMP(s1,s2) strcmp((s1),(s2))
+            #elif defined(WOLF_C89)
+                #define XSTRCASECMP(s1,s2) strcmp((s1),(s2))
+            #else
+                #define XSTRCASECMP(s1,s2) strcasecmp((s1),(s2))
+            #endif
+        #endif
+        #endif /* !XSTRCASECMP */
+
+        #ifndef XSTRNCASECMP
+        #if defined(MICROCHIP_PIC32) && (__XC32_VERSION >= 1000)
+            /* XC32 supports str[n]casecmp in version >= 1.0. */
+            #define XSTRNCASECMP(s1,s2,n) strncasecmp((s1),(s2),(n))
+        #elif defined(MICROCHIP_PIC32) || defined(WOLFSSL_TIRTOS) || \
+                defined(WOLFSSL_ZEPHYR)
+            /* XC32 version < 1.0 does not support strncasecmp, so use case
+             * sensitive one.
+             */
             #define XSTRNCASECMP(s1,s2,n) strncmp((s1),(s2),(n))
         #elif defined(USE_WINDOWS_API) || defined(FREERTOS_TCP_WINSIM)
             #define XSTRNCASECMP(s1,s2,n) _strnicmp((s1),(s2),(n))
@@ -595,7 +686,9 @@ decouple library dependencies with standard string, memory and so on.
             #endif
             #if defined(WOLFSSL_DEOS)
                 #define XSTRNCASECMP(s1,s2,n) strnicmp((s1),(s2),(n))
-            #elif defined(WOLFSSL_CMSIS_RTOSv2)
+            #elif defined(WOLFSSL_CMSIS_RTOSv2) || defined(WOLFSSL_AZSPHERE)
+                #define XSTRNCASECMP(s1,s2,n) strncmp((s1),(s2),(n))
+            #elif defined(WOLF_C89)
                 #define XSTRNCASECMP(s1,s2,n) strncmp((s1),(s2),(n))
             #else
                 #define XSTRNCASECMP(s1,s2,n) strncasecmp((s1),(s2),(n))
@@ -642,6 +735,8 @@ decouple library dependencies with standard string, memory and so on.
                         return ret;
                     }
                 #define XSNPRINTF _xsnprintf_
+            #elif defined(WOLF_C89)
+                #define XSPRINTF sprintf
             #else
                 #define XSNPRINTF snprintf
             #endif
@@ -682,8 +777,8 @@ decouple library dependencies with standard string, memory and so on.
             #endif /* _MSC_VER */
         #endif /* USE_WINDOWS_API */
 
-        #if defined(WOLFSSL_CERT_EXT) || defined(OPENSSL_EXTRA) \
-                    || defined(HAVE_ALPN)
+        #if defined(WOLFSSL_CERT_EXT) || defined(OPENSSL_EXTRA) || \
+            defined(HAVE_ALPN) || defined(WOLFSSL_SNIFFER)
             /* use only Thread Safe version of strtok */
             #if defined(USE_WOLF_STRTOK)
                 #define XSTRTOK(s1,d,ptr) wc_strtok((s1),(d),(ptr))
@@ -712,24 +807,32 @@ decouple library dependencies with standard string, memory and so on.
         WOLFSSL_API char* wc_strsep(char **stringp, const char *delim);
     #endif
 
-    #if !defined(NO_FILESYSTEM) && defined(OPENSSL_EXTRA) && \
-        !defined(NO_STDIO_FILESYSTEM)
+    #ifdef USE_WOLF_STRLCPY
+        WOLFSSL_API size_t wc_strlcpy(char *dst, const char *src, size_t dstSize);
+        #define XSTRLCPY(s1,s2,n) wc_strlcpy((s1),(s2),(n))
+    #endif
+    #ifdef USE_WOLF_STRLCAT
+        WOLFSSL_API size_t wc_strlcat(char *dst, const char *src, size_t dstSize);
+        #define XSTRLCAT(s1,s2,n) wc_strlcat((s1),(s2),(n))
+    #endif
+
+    #if !defined(NO_FILESYSTEM) && !defined(NO_STDIO_FILESYSTEM)
         #ifndef XGETENV
             #include <stdlib.h>
             #define XGETENV getenv
         #endif
-    #endif /* OPENSSL_EXTRA */
+    #endif /* !NO_FILESYSTEM && !NO_STDIO_FILESYSTEM */
 
-        #ifndef CTYPE_USER
-            #ifndef WOLFSSL_LINUXKM
-                #include <ctype.h>
-            #endif
-            #if defined(HAVE_ECC) || defined(HAVE_OCSP) || \
-            defined(WOLFSSL_KEY_GEN) || !defined(NO_DSA) || \
-            defined(OPENSSL_EXTRA)
+    #ifndef CTYPE_USER
+        #ifndef WOLFSSL_LINUXKM
+            #include <ctype.h>
+        #endif
+        #if defined(HAVE_ECC) || defined(HAVE_OCSP) || \
+        defined(WOLFSSL_KEY_GEN) || !defined(NO_DSA) || \
+        defined(OPENSSL_EXTRA)
             #define XTOUPPER(c)     toupper((c))
         #endif
-        #ifdef OPENSSL_ALL
+        #if defined(OPENSSL_ALL) || defined(OPENSSL_EXTRA) || defined(OPENSSL_EXTRA_X509_SMALL)
         #define XISALNUM(c)     isalnum((c))
         #define XISASCII(c)     isascii((c))
         #define XISSPACE(c)     isspace((c))
@@ -739,7 +842,11 @@ decouple library dependencies with standard string, memory and so on.
     #endif
 
     #ifndef OFFSETOF
-        #define OFFSETOF(type, field) ((size_t)&(((type *)0)->field))
+        #if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ >= 4))
+            #define OFFSETOF(type, field) __builtin_offsetof(type, field)
+        #else
+            #define OFFSETOF(type, field) ((size_t)&(((type *)0)->field))
+        #endif
     #endif
 
 
@@ -838,12 +945,15 @@ decouple library dependencies with standard string, memory and so on.
         DYNAMIC_TYPE_ED448        = 92,
         DYNAMIC_TYPE_AES          = 93,
         DYNAMIC_TYPE_CMAC         = 94,
+        DYNAMIC_TYPE_FALCON       = 95,
+        DYNAMIC_TYPE_SESSION      = 96,
         DYNAMIC_TYPE_SNIFFER_SERVER     = 1000,
         DYNAMIC_TYPE_SNIFFER_SESSION    = 1001,
         DYNAMIC_TYPE_SNIFFER_PB         = 1002,
         DYNAMIC_TYPE_SNIFFER_PB_BUFFER  = 1003,
         DYNAMIC_TYPE_SNIFFER_TICKET_ID  = 1004,
         DYNAMIC_TYPE_SNIFFER_NAMED_KEY  = 1005,
+        DYNAMIC_TYPE_SNIFFER_KEY        = 1006,
     };
 
     /* max error buffer string size */
@@ -954,13 +1064,13 @@ decouple library dependencies with standard string, memory and so on.
         WC_CIPHER_AES_CTR = 4,
         WC_CIPHER_AES_XTS = 5,
         WC_CIPHER_AES_CFB = 6,
+        WC_CIPHER_AES_CCM = 12,
+        WC_CIPHER_AES_ECB = 13,
         WC_CIPHER_DES3 = 7,
         WC_CIPHER_DES = 8,
         WC_CIPHER_CHACHA = 9,
-        WC_CIPHER_HC128 = 10,
-        WC_CIPHER_IDEA = 11,
 
-        WC_CIPHER_MAX = WC_CIPHER_HC128
+        WC_CIPHER_MAX = WC_CIPHER_AES_CCM
     };
 
     /* PK=public key (asymmetric) based algorithms */
@@ -1018,8 +1128,7 @@ decouple library dependencies with standard string, memory and so on.
     #define CheckCtcSettings() (CTC_SETTINGS == CheckRunTimeSettings())
 
     /* invalid device id */
-    #define INVALID_DEVID    -2
-
+    #define INVALID_DEVID    (-2)
 
     /* AESNI requires alignment and ARMASM gains some performance from it
      * Xilinx RSA operations require alignment */
@@ -1032,7 +1141,8 @@ decouple library dependencies with standard string, memory and so on.
 
     #ifdef WOLFSSL_USE_ALIGN
         #if !defined(ALIGN16)
-            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)
+            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__) || \
+                defined(__llvm__)
                 #define ALIGN16 __attribute__ ( (aligned (16)))
             #elif defined(_MSC_VER)
                 /* disable align warning, we want alignment ! */
@@ -1044,7 +1154,8 @@ decouple library dependencies with standard string, memory and so on.
         #endif /* !ALIGN16 */
 
         #if !defined (ALIGN32)
-            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)
+            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__) || \
+                defined(__llvm__)
                 #define ALIGN32 __attribute__ ( (aligned (32)))
             #elif defined(_MSC_VER)
                 /* disable align warning, we want alignment ! */
@@ -1056,7 +1167,8 @@ decouple library dependencies with standard string, memory and so on.
         #endif /* !ALIGN32 */
 
         #if !defined(ALIGN64)
-            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)
+            #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__) || \
+                defined(__llvm__)
                 #define ALIGN64 __attribute__ ( (aligned (64)))
             #elif defined(_MSC_VER)
                 /* disable align warning, we want alignment ! */
@@ -1067,7 +1179,8 @@ decouple library dependencies with standard string, memory and so on.
             #endif
         #endif /* !ALIGN64 */
 
-        #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)
+        #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__) || \
+            defined(__llvm__)
             #define ALIGN128 __attribute__ ( (aligned (128)))
         #elif defined(_MSC_VER)
             /* disable align warning, we want alignment ! */
@@ -1077,7 +1190,8 @@ decouple library dependencies with standard string, memory and so on.
             #define ALIGN128
         #endif
 
-        #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)
+        #if defined(__IAR_SYSTEMS_ICC__) || defined(__GNUC__)  || \
+            defined(__llvm__)
             #define ALIGN256 __attribute__ ( (aligned (256)))
         #elif defined(_MSC_VER)
             /* disable align warning, we want alignment ! */
@@ -1270,13 +1384,22 @@ decouple library dependencies with standard string, memory and so on.
     #endif
 
 
-    #if FIPS_VERSION_EQ(5,1)
+    #if FIPS_VERSION_GE(5,1)
         #define WC_SPKRE_F(x,y) wolfCrypt_SetPrivateKeyReadEnable_fips((x),(y))
         #define PRIVATE_KEY_LOCK() WC_SPKRE_F(0,WC_KEYTYPE_ALL)
         #define PRIVATE_KEY_UNLOCK() WC_SPKRE_F(1,WC_KEYTYPE_ALL)
     #else
         #define PRIVATE_KEY_LOCK() do{}while(0)
         #define PRIVATE_KEY_UNLOCK() do{}while(0)
+    #endif
+
+
+    #ifdef _MSC_VER
+        /* disable buggy MSC warning (incompatible with clang-tidy
+         * readability-avoid-const-params-in-decls)
+         * "warning C4028: formal parameter x different from declaration"
+         */
+        #pragma warning(disable: 4028)
     #endif
 
 

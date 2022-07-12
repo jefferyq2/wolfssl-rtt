@@ -24,6 +24,7 @@
 
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/visibility.h>
+#include <wolfssl/wolfcrypt/asn_public.h>
 
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -54,30 +55,31 @@
 
 
 /* Default key ID's */
-#ifndef SE050_KEYID_AES
-#define SE050_KEYID_AES        55
+#ifndef SE050_KEYSTOREID_AES
+#define SE050_KEYSTOREID_AES     55
 #endif
-#ifndef SE050_KEYID_ECC_SIGN
-#define SE050_KEYID_ECC_SIGN   56
+#ifndef SE050_KEYSTOREID_ED25519
+#define SE050_KEYSTOREID_ED25519 58
 #endif
-#ifndef SE050_KEYID_ECC_VERIFY 
-#define SE050_KEYID_ECC_VERIFY 57
+#ifndef SE050_KEYSTOREID_ECC
+#define SE050_KEYSTOREID_ECC     60
 #endif
-#ifndef SE050_KEYID_ED25519
-#define SE050_KEYID_ED25519    58
+#ifndef SE050_KEYSTOREID_CURVE25519
+#define SE050_KEYSTOREID_CURVE25519 59
 #endif
-
 
 enum {
-    SSS_BLOCK_SIZE = 512
+    SSS_BLOCK_SIZE = 512,
+
+    SSS_MAX_ECC_BITS = 521
 };
 
 enum SE050KeyType {
-    SE050_KEYID_ANY,
+    SE050_ANY_KEY,
     SE050_AES_KEY,
-    SE050_ECC_SIGN,
-    SE050_ECC_VERIFY,
-    SE050_ED25519,
+    SE050_ECC_KEY,
+    SE050_ED25519_KEY,
+    SE050_CURVE25519_KEY
 };
 
 
@@ -116,7 +118,7 @@ WOLFSSL_LOCAL void se050_aes_free(struct Aes* aes);
 
 struct ecc_key;
 struct WC_RNG;
-#ifdef WOLFSSL_SP_MATH
+#if defined(WOLFSSL_SP_MATH) || defined(WOLFSSL_SP_MATH_ALL)
     struct sp_int;
     #define MATH_INT_T struct sp_int
 #elif defined(USE_FAST_MATH)
@@ -131,12 +133,12 @@ WOLFSSL_LOCAL int se050_ecc_sign_hash_ex(const byte* in, word32 inLen,
     byte* out, word32 *outLen, struct ecc_key* key);
 
 WOLFSSL_LOCAL int se050_ecc_verify_hash_ex(const byte* hash, word32 hashlen,
-    byte* signature, word32 signatureLen, struct ecc_key* key, int* res);
+    byte* sigRS, word32 sigRSLen, struct ecc_key* key, int* res);
 
 WOLFSSL_LOCAL int se050_ecc_create_key(struct ecc_key* key, int curve_id, int keySize);
 WOLFSSL_LOCAL int se050_ecc_shared_secret(struct ecc_key* private_key,
     struct ecc_key* public_key, byte* out, word32* outlen);
-WOLFSSL_LOCAL int se050_ecc_free_key(struct ecc_key* key);
+WOLFSSL_LOCAL void se050_ecc_free_key(struct ecc_key* key);
 
 struct ed25519_key;
 WOLFSSL_LOCAL int se050_ed25519_create_key(struct ed25519_key* key);
@@ -148,4 +150,10 @@ WOLFSSL_LOCAL int se050_ed25519_verify_msg(const byte* signature,
     word32 signatureLen, const byte* msg, word32 msgLen,
     struct ed25519_key* key, int* res);
 
+struct curve25519_key;
+struct ECPoint;
+WOLFSSL_LOCAL int se050_curve25519_create_key(struct curve25519_key* key, int keySize);
+WOLFSSL_LOCAL int se050_curve25519_shared_secret(struct curve25519_key* private_key,
+    struct curve25519_key* public_key, struct ECPoint* out);
+WOLFSSL_LOCAL void se050_curve25519_free_key(struct curve25519_key* key);
 #endif /* _SE050_PORT_H_ */

@@ -136,7 +136,6 @@ void wolfssl_test_thread(void *param) {
         rt_kprintf("wolfSSL_CTX_new error");
     }
 
-    /*鑻ョ郴缁熸棤娉曟彁渚涚湡瀹炴椂闂磋鍘绘帀涓嬮潰鐨勬敞閲婏紝鍚﹀垯璇佷功鏍￠獙浼氬嚭閿�*/
     //wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_NONE, 0);
 
     /*make new wolfSSL struct*/

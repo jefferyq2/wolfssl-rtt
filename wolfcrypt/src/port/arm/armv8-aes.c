@@ -1611,7 +1611,7 @@ static int Aes128GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "LD1 {v1.2d-v4.2d}, [%[Key]], #64 \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
             "LD1 {v5.2d-v8.2d}, [%[Key]], #64 \n"
@@ -1659,7 +1659,7 @@ static int Aes128GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "EOR v15.16b, v17.16b, v15.16b \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "RBIT v15.16b, v15.16b \n" /* v15 is encrypted out block (c) */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
@@ -1929,7 +1929,7 @@ static int Aes192GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "LD1 {v1.2d-v4.2d}, [%[Key]], #64 \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
             "LD1 {v5.2d-v8.2d}, [%[Key]], #64 \n"
@@ -1981,7 +1981,7 @@ static int Aes192GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "EOR v15.16b, v17.16b, v15.16b \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "RBIT v15.16b, v15.16b \n" /* v15 is encrypted out block (c) */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
@@ -2262,7 +2262,7 @@ static int Aes256GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "LD1 {v1.2d-v4.2d}, [%[Key]], #64 \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
             "LD1 {v5.2d-v8.2d}, [%[Key]], #64 \n"
@@ -2318,7 +2318,7 @@ static int Aes256GcmEncrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "REV64 v13.16b, v13.16b \n" /* network order */
             "EOR v15.16b, v17.16b, v15.16b \n"
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
-            "ADD v13.2d, v13.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v13.4s, v13.4s, v14.4s \n" /* add 1 to counter */
             "RBIT v15.16b, v15.16b \n" /* v15 is encrypted out block (c) */
             "EXT v13.16b, v13.16b, v13.16b, #8 \n"
             "REV64 v13.16b, v13.16b \n" /* revert from network order */
@@ -2684,7 +2684,7 @@ int  wc_AesGcmDecrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "1: \n"
             "REV64 v12.16b, v12.16b \n" /* network order */
             "EXT v12.16b, v12.16b, v12.16b, #8 \n"
-            "ADD v12.2d, v12.2d, v14.2d \n" /* add 1 to counter */
+            "ADD v12.4s, v12.4s, v14.4s \n" /* add 1 to counter */
             "EXT v12.16b, v12.16b, v12.16b, #8 \n"
             "REV64 v12.16b, v12.16b \n" /* revert from network order */
             "MOV v0.16b, v12.16b  \n"
@@ -2750,7 +2750,7 @@ int  wc_AesGcmDecrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "1: \n"
             "REV64 v14.16b, v14.16b \n" /* network order */
             "EXT v14.16b, v14.16b, v14.16b, #8 \n"
-            "ADD v14.2d, v14.2d, v16.2d \n" /* add 1 to counter */
+            "ADD v14.4s, v14.4s, v16.4s \n" /* add 1 to counter */
             "EXT v14.16b, v14.16b, v14.16b, #8 \n"
             "REV64 v14.16b, v14.16b \n" /* revert from network order */
             "MOV v0.16b, v14.16b  \n"
@@ -2821,7 +2821,7 @@ int  wc_AesGcmDecrypt(Aes* aes, byte* out, const byte* in, word32 sz,
             "1: \n"
             "REV64 v17.16b, v17.16b \n" /* network order */
             "EXT v17.16b, v17.16b, v17.16b, #8 \n"
-            "ADD v17.2d, v17.2d, v18.2d \n" /* add 1 to counter */
+            "ADD v17.4s, v17.4s, v18.4s \n" /* add 1 to counter */
             "EXT v17.16b, v17.16b, v17.16b, #8 \n"
             "REV64 v17.16b, v17.16b \n" /* revert from network order */
             "MOV v0.16b, v17.16b  \n"
@@ -5320,23 +5320,23 @@ int wc_AesGcmSetKey(Aes* aes, const byte* key, word32 len)
 /* AES-DIRECT */
 #if defined(WOLFSSL_AES_DIRECT)
         /* Allow direct access to one block encrypt */
-        void wc_AesEncryptDirect(Aes* aes, byte* out, const byte* in)
+        int wc_AesEncryptDirect(Aes* aes, byte* out, const byte* in)
         {
             if (aes == NULL || out == NULL || in == NULL) {
                 WOLFSSL_MSG("Invalid input to wc_AesEncryptDirect");
-                return;
+                return BAD_FUNC_ARG;
             }
-            wc_AesEncrypt(aes, in, out);
+            return wc_AesEncrypt(aes, in, out);
         }
     #ifdef HAVE_AES_DECRYPT
         /* Allow direct access to one block decrypt */
-        void wc_AesDecryptDirect(Aes* aes, byte* out, const byte* in)
+        int wc_AesDecryptDirect(Aes* aes, byte* out, const byte* in)
         {
             if (aes == NULL || out == NULL || in == NULL) {
                 WOLFSSL_MSG("Invalid input to wc_AesDecryptDirect");
-                return;
+                return BAD_FUNC_ARG;
             }
-            wc_AesDecrypt(aes, in, out);
+            return wc_AesDecrypt(aes, in, out);
         }
     #endif /* HAVE_AES_DECRYPT */
 #endif /* WOLFSSL_AES_DIRECT */

@@ -230,6 +230,9 @@ const char* wc_GetErrorString(int error)
     case AES_CCM_AUTH_E:
         return "AES-CCM Authentication check fail";
 
+    case AES_SIV_AUTH_E:
+        return "AES-SIV authentication failure";
+
     case ASYNC_INIT_E:
         return "Async Init error";
 
@@ -249,7 +252,11 @@ const char* wc_GetErrorString(int error)
         return "Bad alignment error, no alloc help";
 
     case ASN_NO_SIGNER_E :
+#ifndef OPENSSL_EXTRA
         return "ASN no signer error to confirm failure";
+#else
+        return "certificate verify failed";
+#endif
 
     case ASN_CRL_CONFIRM_E :
         return "ASN CRL sig error, confirm failure";
@@ -553,6 +560,12 @@ const char* wc_GetErrorString(int error)
 
     case FIPS_PRIVATE_KEY_LOCKED_E:
         return "Cannot export private key, locked";
+
+    case PROTOCOLCB_UNAVAILABLE:
+        return "Protocol callback unavailable";
+
+    case NO_VALID_DEVID:
+        return "No valid device ID set";
 
     default:
         return "unknown error number";

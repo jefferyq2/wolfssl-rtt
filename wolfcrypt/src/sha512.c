@@ -28,9 +28,7 @@
 
 #if (defined(WOLFSSL_SHA512) || defined(WOLFSSL_SHA384)) && !defined(WOLFSSL_ARMASM) && !defined(WOLFSSL_PSOC6_CRYPTO)
 
-#if defined(HAVE_FIPS) && \
-	defined(HAVE_FIPS_VERSION) && (HAVE_FIPS_VERSION >= 2)
-
+#if defined(HAVE_FIPS) && defined(HAVE_FIPS_VERSION) && (HAVE_FIPS_VERSION >= 2)
     /* set NO_WRAPPERS before headers, use direct internal f()s not wrappers */
     #define FIPS_NO_WRAPPERS
 
@@ -47,10 +45,6 @@
 
 #ifdef WOLF_CRYPTO_CB
     #include <wolfssl/wolfcrypt/cryptocb.h>
-#endif
-
-#ifdef WOLFSSL_SE050
-    #include <wolfssl/wolfcrypt/port/nxp/se050_port.h>
 #endif
 
 /* deprecated USE_SLOW_SHA2 (replaced with USE_SLOW_SHA512) */
@@ -153,6 +147,10 @@
     #include <wolfcrypt/src/misc.c>
 #endif
 
+#if defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
+    #include <wolfssl/wolfcrypt/port/nxp/se050_port.h>
+#endif
+
 
 #if defined(USE_INTEL_SPEEDUP)
     #if defined(__GNUC__) && ((__GNUC__ < 4) || \
@@ -203,7 +201,7 @@
 #elif defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
 
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
     int wc_InitSha512(wc_Sha512* sha512)
     {
         if (sha512 == NULL)
@@ -599,6 +597,11 @@ static int InitSha512_Family(wc_Sha512* sha512, void* heap, int devId,
     (defined(HAVE_INTEL_AVX1) || defined(HAVE_INTEL_AVX2))
     Sha512_SetTransform();
 #endif
+#ifdef WOLFSSL_HASH_KEEP
+    sha512->msg  = NULL;
+    sha512->len  = 0;
+    sha512->used = 0;
+#endif
 
 #if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_SHA512)
     ret = wolfAsync_DevCtxInit(&sha512->asyncDev,
@@ -682,31 +685,31 @@ static const word64 K512[80] = {
 #define blk0(i) (W[i] = sha512->buffer[i])
 
 #define blk2(i) (\
-               W[ i     & 15] += \
-            s1(W[(i-2)  & 15])+ \
-               W[(i-7)  & 15] + \
-            s0(W[(i-15) & 15])  \
+               W[ (i)     & 15] += \
+            s1(W[((i)-2)  & 15])+ \
+               W[((i)-7)  & 15] + \
+            s0(W[((i)-15) & 15])  \
         )
 
-#define Ch(x,y,z)  (z ^ (x & (y ^ z)))
-#define Maj(x,y,z) ((x & y) | (z & (x | y)))
+#define Ch(x,y,z)  ((z) ^ ((x) & ((y) ^ (z))))
+#define Maj(x,y,z) (((x) & (y)) | ((z) & ((x) | (y))))
 
-#define a(i) T[(0-i) & 7]
-#define b(i) T[(1-i) & 7]
-#define c(i) T[(2-i) & 7]
-#define d(i) T[(3-i) & 7]
-#define e(i) T[(4-i) & 7]
-#define f(i) T[(5-i) & 7]
-#define g(i) T[(6-i) & 7]
-#define h(i) T[(7-i) & 7]
+#define a(i) T[(0-(i)) & 7]
+#define b(i) T[(1-(i)) & 7]
+#define c(i) T[(2-(i)) & 7]
+#define d(i) T[(3-(i)) & 7]
+#define e(i) T[(4-(i)) & 7]
+#define f(i) T[(5-(i)) & 7]
+#define g(i) T[(6-(i)) & 7]
+#define h(i) T[(7-(i)) & 7]
 
 #define S0(x) (rotrFixed64(x,28) ^ rotrFixed64(x,34) ^ rotrFixed64(x,39))
 #define S1(x) (rotrFixed64(x,14) ^ rotrFixed64(x,18) ^ rotrFixed64(x,41))
-#define s0(x) (rotrFixed64(x,1)  ^ rotrFixed64(x,8)  ^ (x>>7))
-#define s1(x) (rotrFixed64(x,19) ^ rotrFixed64(x,61) ^ (x>>6))
+#define s0(x) (rotrFixed64(x,1)  ^ rotrFixed64(x,8)  ^ ((x)>>7))
+#define s1(x) (rotrFixed64(x,19) ^ rotrFixed64(x,61) ^ ((x)>>6))
 
 #define R(i) \
-    h(i) += S1(e(i)) + Ch(e(i),f(i),g(i)) + K[i+j] + (j ? blk2(i) : blk0(i)); \
+    h(i) += S1(e(i)) + Ch(e(i),f(i),g(i)) + K[(i)+j] + (j ? blk2(i) : blk0(i)); \
     d(i) += h(i); \
     h(i) += S0(a(i)) + Maj(a(i),b(i),c(i))
 
@@ -952,18 +955,20 @@ int wc_Sha512Update(wc_Sha512* sha512, const byte* data, word32 len)
 
 #if defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
 #else
 
 static WC_INLINE int Sha512Final(wc_Sha512* sha512)
 {
-    byte* local = (byte*)sha512->buffer;
+    byte* local;
     int ret;
 
     if (sha512 == NULL) {
         return BAD_FUNC_ARG;
     }
+
+    local = (byte*)sha512->buffer;
 
     local[sha512->buffLen++] = 0x80;  /* add 1 */
 
@@ -1063,7 +1068,7 @@ static WC_INLINE int Sha512Final(wc_Sha512* sha512)
 
 #if defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
 #else
 
@@ -1135,10 +1140,15 @@ int wc_Sha512Final(wc_Sha512* sha512, byte* hash)
 
 #endif /* WOLFSSL_KCAPI_HASH */
 
-#ifndef WOLFSSL_SE050
+#if !defined(WOLFSSL_SE050) || !defined(WOLFSSL_SE050_HASH)
 int wc_InitSha512(wc_Sha512* sha512)
 {
-    return wc_InitSha512_ex(sha512, NULL, INVALID_DEVID);
+    int devId = INVALID_DEVID;
+
+#ifdef WOLF_CRYPTO_CB
+    devId = wc_CryptoCb_DefaultDevID();
+#endif
+    return wc_InitSha512_ex(sha512, NULL, devId);
 }
 
 void wc_Sha512Free(wc_Sha512* sha512)
@@ -1155,6 +1165,13 @@ void wc_Sha512Free(wc_Sha512* sha512)
 
 #if defined(WOLFSSL_KCAPI_HASH)
     KcapiHashFree(&sha512->kcapi);
+#endif
+
+#if defined(WOLFSSL_HASH_KEEP)
+    if (sha512->msg != NULL) {
+        XFREE(sha512->msg, sha512->heap, DYNAMIC_TYPE_TMP_BUFFER);
+        sha512->msg = NULL;
+    }
 #endif
 
 #if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_SHA512)
@@ -1217,7 +1234,7 @@ int wc_Sha512Transform(wc_Sha512* sha, const unsigned char* data)
 }
 #endif /* OPENSSL_EXTRA */
 #endif /* WOLFSSL_SHA512 */
-#endif /* !WOLFSSL_SE050 */
+#endif /* !WOLFSSL_SE050 || !WOLFSSL_SE050_HASH */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1228,7 +1245,7 @@ int wc_Sha512Transform(wc_Sha512* sha, const unsigned char* data)
 #if defined(WOLFSSL_IMX6_CAAM) && !defined(NO_IMX6_CAAM_HASH) && \
     !defined(WOLFSSL_QNX_CAAM)
     /* functions defined in wolfcrypt/src/port/caam/caam_sha.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
     int wc_InitSha384_ex(wc_Sha384* sha384, void* heap, int devId)
     {
         if (sha384 == NULL) {
@@ -1240,7 +1257,7 @@ int wc_Sha512Transform(wc_Sha512* sha, const unsigned char* data)
     int wc_Sha384Update(wc_Sha384* sha384, const byte* data, word32 len)
     {
         return se050_hash_update(&sha384->se050Ctx, data, len);
-    
+
     }
     int wc_Sha384Final(wc_Sha384* sha384, byte* hash)
     {
@@ -1303,6 +1320,11 @@ static int InitSha384(wc_Sha384* sha384)
 #endif
 #ifdef WOLFSSL_HASH_FLAGS
     sha384->flags = 0;
+#endif
+#ifdef WOLFSSL_HASH_KEEP
+    sha384->msg  = NULL;
+    sha384->len  = 0;
+    sha384->used = 0;
 #endif
 
     return 0;
@@ -1429,7 +1451,12 @@ int wc_InitSha384_ex(wc_Sha384* sha384, void* heap, int devId)
 
 int wc_InitSha384(wc_Sha384* sha384)
 {
-    return wc_InitSha384_ex(sha384, NULL, INVALID_DEVID);
+    int devId = INVALID_DEVID;
+
+#ifdef WOLF_CRYPTO_CB
+    devId = wc_CryptoCb_DefaultDevID();
+#endif
+    return wc_InitSha384_ex(sha384, NULL, devId);
 }
 
 void wc_Sha384Free(wc_Sha384* sha384)
@@ -1448,6 +1475,12 @@ void wc_Sha384Free(wc_Sha384* sha384)
     KcapiHashFree(&sha384->kcapi);
 #endif
 
+#if defined(WOLFSSL_HASH_KEEP)
+    if (sha384->msg != NULL) {
+        XFREE(sha384->msg, sha384->heap, DYNAMIC_TYPE_TMP_BUFFER);
+        sha384->msg = NULL;
+    }
+#endif
 
 #if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_SHA384)
     wolfAsync_DevCtxFree(&sha384->asyncDev, WOLFSSL_ASYNC_MARKER_SHA384);
@@ -1517,7 +1550,7 @@ int wc_Sha512Copy(wc_Sha512* src, wc_Sha512* dst)
     dst->silabsCtx.hash_ctx.hash_type_ctx = &(dst->silabsCtx.hash_type_ctx);
 #endif
 
-#ifdef WOLFSSL_ASYNC_CRYPT
+#if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_SHA512)
     ret = wolfAsync_DevCopy(&src->asyncDev, &dst->asyncDev);
 #endif
 #if  defined(WOLFSSL_ESP32WROOM32_CRYPT) && \
@@ -1528,6 +1561,14 @@ int wc_Sha512Copy(wc_Sha512* src, wc_Sha512* dst)
 #endif
 #ifdef WOLFSSL_HASH_FLAGS
      dst->flags |= WC_HASH_FLAG_ISCOPY;
+#endif
+#if defined(WOLFSSL_HASH_KEEP)
+    if (src->msg != NULL) {
+        dst->msg = (byte*)XMALLOC(src->len, dst->heap, DYNAMIC_TYPE_TMP_BUFFER);
+        if (dst->msg == NULL)
+            return MEMORY_E;
+        XMEMCPY(dst->msg, src->msg, src->len);
+    }
 #endif
 
     return ret;
@@ -1566,7 +1607,7 @@ int wc_Sha512_224Update(wc_Sha512* sha, const byte* data, word32 len)
 
 #if defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
 #else
 int wc_Sha512_224FinalRaw(wc_Sha512* sha, byte* hash)
@@ -1585,7 +1626,7 @@ void wc_Sha512_224Free(wc_Sha512* sha)
 }
 #if defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
 
 #else
@@ -1630,7 +1671,7 @@ int wc_Sha512_256Update(wc_Sha512* sha, const byte* data, word32 len)
 }
 #if defined(WOLFSSL_KCAPI_HASH)
     /* functions defined in wolfcrypt/src/port/kcapi/kcapi_hash.c */
-#elif defined(WOLFSSL_SE050)
+#elif defined(WOLFSSL_SE050) && defined(WOLFSSL_SE050_HASH)
 
 #else
 int wc_Sha512_256FinalRaw(wc_Sha512* sha, byte* hash)
@@ -1735,7 +1776,7 @@ int wc_Sha384Copy(wc_Sha384* src, wc_Sha384* dst)
     dst->silabsCtx.hash_ctx.hash_type_ctx = &(dst->silabsCtx.hash_type_ctx);
 #endif
 
-#ifdef WOLFSSL_ASYNC_CRYPT
+#if defined(WOLFSSL_ASYNC_CRYPT) && defined(WC_ASYNC_ENABLE_SHA384)
     ret = wolfAsync_DevCopy(&src->asyncDev, &dst->asyncDev);
 #endif
 #if defined(WOLFSSL_ESP32WROOM32_CRYPT) && \
@@ -1746,6 +1787,14 @@ int wc_Sha384Copy(wc_Sha384* src, wc_Sha384* dst)
 #endif
 #ifdef WOLFSSL_HASH_FLAGS
      dst->flags |= WC_HASH_FLAG_ISCOPY;
+#endif
+#if defined(WOLFSSL_HASH_KEEP)
+    if (src->msg != NULL) {
+        dst->msg = (byte*)XMALLOC(src->len, dst->heap, DYNAMIC_TYPE_TMP_BUFFER);
+        if (dst->msg == NULL)
+            return MEMORY_E;
+        XMEMCPY(dst->msg, src->msg, src->len);
+    }
 #endif
 
     return ret;
@@ -1772,4 +1821,23 @@ int wc_Sha384GetFlags(wc_Sha384* sha384, word32* flags)
 
 #endif /* WOLFSSL_SHA384 */
 
+#ifdef WOLFSSL_HASH_KEEP
+/* Some hardware have issues with update, this function stores the data to be
+ * hashed into an array. Once ready, the Final operation is called on all of the
+ * data to be hashed at once.
+ * returns 0 on success
+ */
+int wc_Sha512_Grow(wc_Sha512* sha512, const byte* in, int inSz)
+{
+    return _wc_Hash_Grow(&(sha512->msg), &(sha512->used), &(sha512->len), in,
+                        inSz, sha512->heap);
+}
+#ifdef WOLFSSL_SHA384
+int wc_Sha384_Grow(wc_Sha384* sha384, const byte* in, int inSz)
+{
+    return _wc_Hash_Grow(&(sha384->msg), &(sha384->used), &(sha384->len), in,
+                        inSz, sha384->heap);
+}
+#endif /* WOLFSSL_SHA384 */
+#endif /* WOLFSSL_HASH_KEEP */
 #endif /* WOLFSSL_SHA512 || WOLFSSL_SHA384 */
